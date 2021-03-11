@@ -13,7 +13,7 @@ const KEY_SHOOT: KeyCode = KeyCode::Space;
 const PLAYER_SPEED: f32 = 80f32;
 const PLAYER_SHOOT_TIME: f32 = 0.8f32;
 const PLAYER_BULLET_SPEED: f32 = 80f32;
-const PLAYER_LIVES_START: i32 = 3i32;
+const PLAYER_LIVES_START: i32 = 7i32;
 const PLAYER_LIVES_MAX: i32 = 7i32;
 
 const ENEMY_SPEED: f32 = 40f32;
@@ -426,6 +426,7 @@ async fn main() {
     let mut texture_player_missile: Texture2D = load_texture("resources/player_missile.png").await;
     let mut texture_demon_missile: Texture2D = load_texture("resources/demon_missile.png").await;
     let mut texture_ground_bg: Texture2D = load_texture("resources/ground_bg.png").await;
+    let mut texture_life: Texture2D = load_texture("resources/life.png").await;
     set_texture_filter(game_render_target.texture, FilterMode::Nearest);
     set_texture_filter(texture_demon_1, FilterMode::Nearest);
     set_texture_filter(texture_demon_2, FilterMode::Nearest);
@@ -433,6 +434,7 @@ async fn main() {
     set_texture_filter(texture_player_missile, FilterMode::Nearest);
     set_texture_filter(texture_demon_missile, FilterMode::Nearest);
     set_texture_filter(texture_ground_bg, FilterMode::Nearest);
+    set_texture_filter(texture_life, FilterMode::Nearest);
 
     let font = load_ttf_font("resources/Kenney Pixel Square.ttf").await;
     let mut player_score: i32 = 0;
@@ -497,8 +499,6 @@ async fn main() {
             }
         }
 
-        let mut kill_enemies_indices = Vec::<usize>::new();
-
         // bullets hurting enemies
         for (i, bullet) in bullets.iter_mut()
             .filter(|b| b.hurt_type == BulletHurtType::Enemy)
@@ -539,6 +539,22 @@ async fn main() {
                 ..Default::default()
             },
         );
+
+        // draw lives
+        let lives_padding = 2f32;
+        for i in 0..player_lives {
+            draw_texture_ex(
+                texture_life,
+                5f32 + i as f32 * (texture_life.width() + lives_padding),
+                GAME_SIZE_Y as f32 - texture_ground_bg.height() + 3f32,
+                WHITE,
+                DrawTextureParams {
+                    //dest_size: Some(vec2(screen_width(), screen_height())),
+                    //dest_size: Some(Vec2::new(GAME_SIZE_X as f32,  texture_ground_bg.height())),
+                    ..Default::default()
+                },
+            );
+        }
 
         player.update(dt, &mut bullets, &textures);
         player.draw();

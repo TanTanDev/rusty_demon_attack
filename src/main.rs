@@ -13,13 +13,16 @@ const KEY_SHOOT: KeyCode = KeyCode::Space;
 const PLAYER_SPEED: f32 = 80f32;
 const PLAYER_SHOOT_TIME: f32 = 0.8f32;
 const PLAYER_BULLET_SPEED: f32 = 80f32;
+const PLAYER_LIVES_START: i32 = 3i32;
+const PLAYER_LIVES_MAX: i32 = 7i32;
 
 const ENEMY_SPEED: f32 = 40f32;
 const ENEMY_BULLET_SPEED: f32 = 80f32;
 const ENEMY_SHOOT_TIME: f32 = 2f32;
 const ENEMY_ANIM_TIME_SPAWN: f32 = 0.7f32;
+const ENEMY_ANIM_SPAWN_SCALE: f32 = 3.0f32;
 // how far away the spawn animation starts
-const ENEMY_ANIM_DISTANCE: f32 = 40f32;
+const ENEMY_ANIM_DISTANCE: f32 = 140f32;
 // only one enemy should spawn at a time, this delay
 const ENEMY_ENTRANCE_DELAY: f32 = 2f32;
 
@@ -60,8 +63,8 @@ pub struct Bullet {
 impl Bullet {
     pub fn new(pos: Vec2, hurt_type: BulletHurtType, textures: &Textures) -> Self {
         let (vel, texture) = match hurt_type{
-            BulletHurtType::Player => (vec2(0f32, -1f32 * PLAYER_BULLET_SPEED), textures.player_missile), 
-            BulletHurtType::Enemy => (vec2(0f32, ENEMY_BULLET_SPEED), textures.demon_missile),
+            BulletHurtType::Enemy => (vec2(0f32, -1f32 * PLAYER_BULLET_SPEED), textures.player_missile), 
+            BulletHurtType::Player => (vec2(0f32, ENEMY_BULLET_SPEED), textures.demon_missile),
         };
 
         Bullet {
@@ -201,7 +204,7 @@ impl Enemy {
         state_data.shoot_timer += dt;
         if state_data.shoot_timer > ENEMY_SHOOT_TIME {
             let spawn_offset = vec2(0f32, 0f32);
-            bullets.push(Bullet::new(state_shared.pos + spawn_offset, BulletHurtType::Enemy, &textures));
+            bullets.push(Bullet::new(state_shared.pos + spawn_offset, BulletHurtType::Player, &textures));
             state_data.shoot_timer -= ENEMY_SHOOT_TIME;
         }
         state_shared.collision_rect.x = state_shared.pos.x - state_shared.texture.width()*0.5f32;
@@ -214,6 +217,8 @@ impl Enemy {
         //draw_circle(self.pos.x, self.pos.y, 1.0f32, RED);
         let fraction = 1.0f32 - state_data.spawn_timer / ENEMY_ANIM_TIME_SPAWN;
         let offset = fraction * ENEMY_ANIM_DISTANCE;
+        let sprite_width = state_shared.texture.width()/3f32;
+        let scale = sprite_width + fraction * ENEMY_ANIM_SPAWN_SCALE * sprite_width;
         // Left wing
         draw_texture_ex(
             state_shared.texture,
@@ -222,6 +227,7 @@ impl Enemy {
             WHITE,
             DrawTextureParams {
                 rotation: 0f32,
+                dest_size: Some(vec2(scale, state_shared.texture.height())),
                 source: Some(Rect::new(
                     state_shared.texture.width() / 3f32 * rand_frame as f32,
                     0f32,
@@ -240,6 +246,7 @@ impl Enemy {
             DrawTextureParams {
                 rotation: 0f32,
                 flip_x: true,
+                dest_size: Some(vec2(scale, state_shared.texture.height())),
                 source: Some(Rect::new(
                     state_shared.texture.width() / 3f32 * rand_frame as f32,
                     0f32,
@@ -335,7 +342,7 @@ impl Player {
         if is_key_down(KEY_SHOOT) {
             if self.shoot_timer >= PLAYER_SHOOT_TIME {
                 let spawn_offset = vec2(3f32, -4f32);
-                bullets.push(Bullet::new(self.pos + spawn_offset, BulletHurtType::Player, &textures));
+                bullets.push(Bullet::new(self.pos + spawn_offset, BulletHurtType::Enemy, &textures));
                 self.shoot_timer = 0f32;
             }
         }
@@ -413,17 +420,23 @@ impl GameManager {
 #[macroquad::main(window_conf)]
 async fn main() {
     let game_render_target = render_target(GAME_SIZE_X as u32, GAME_SIZE_Y as u32);
-    set_texture_filter(game_render_target.texture, FilterMode::Nearest);
     let mut texture_demon_1: Texture2D = load_texture("resources/demon_1.png").await;
     let mut texture_demon_2: Texture2D = load_texture("resources/demon_2.png").await;
     let mut texture_player: Texture2D = load_texture("resources/player.png").await;
     let mut texture_player_missile: Texture2D = load_texture("resources/player_missile.png").await;
     let mut texture_demon_missile: Texture2D = load_texture("resources/demon_missile.png").await;
+    let mut texture_ground_bg: Texture2D = load_texture("resources/ground_bg.png").await;
+    set_texture_filter(game_render_target.texture, FilterMode::Nearest);
     set_texture_filter(texture_demon_1, FilterMode::Nearest);
     set_texture_filter(texture_demon_2, FilterMode::Nearest);
     set_texture_filter(texture_player, FilterMode::Nearest);
     set_texture_filter(texture_player_missile, FilterMode::Nearest);
     set_texture_filter(texture_demon_missile, FilterMode::Nearest);
+    set_texture_filter(texture_ground_bg, FilterMode::Nearest);
+
+    let font = load_ttf_font("resources/Kenney Pixel Square.ttf").await;
+    let mut player_score: i32 = 0;
+    let mut player_lives: i32 = PLAYER_LIVES_START;
 
     let textures = Textures {
         demon_1: texture_demon_1,
@@ -443,7 +456,8 @@ async fn main() {
         enemies.push(enemy);
     }
 
-    let mut player = Player::new(vec2(GAME_CENTER_X, GAME_SIZE_Y as f32 - 30f32), texture_player, texture_player_missile);
+    let player_spawn_y = GAME_SIZE_Y as f32 - texture_ground_bg.height() - texture_player.height();
+    let mut player = Player::new(vec2(GAME_CENTER_X, player_spawn_y), texture_player, texture_player_missile);
 
     let mut game_manager = GameManager {
         spawn_timer: 0f32,
@@ -472,9 +486,14 @@ async fn main() {
         }
 
         // bullets hurting player
-        for (i, bullet) in bullets.iter().filter(|b| b.hurt_type == BulletHurtType::Player).enumerate() {
+        for (i, bullet) in bullets.iter_mut().filter(|b| b.hurt_type == BulletHurtType::Player).enumerate() {
             if bullet.overlaps(&player.collision_rect) {
-
+                player_lives -= 1;
+                if player_lives <= 0 {
+                    debug!("IMPLEMENT LOSE STATE!");
+                }
+                bullet.is_kill = true;
+                break;
             }
         }
 
@@ -482,7 +501,7 @@ async fn main() {
 
         // bullets hurting enemies
         for (i, bullet) in bullets.iter_mut()
-            .filter(|b| b.hurt_type == BulletHurtType::Player)
+            .filter(|b| b.hurt_type == BulletHurtType::Enemy)
             .enumerate()
         {
             for (i, enemy) in enemies.iter_mut().enumerate() {
@@ -509,8 +528,33 @@ async fn main() {
         // remove dead enemies
         enemies.retain(|e| e.state_shared.health > 0);
 
+        draw_texture_ex(
+            texture_ground_bg,
+            0f32,
+            GAME_SIZE_Y as f32 - texture_ground_bg.height(),
+            WHITE,
+            DrawTextureParams {
+                //dest_size: Some(vec2(screen_width(), screen_height())),
+                dest_size: Some(Vec2::new(GAME_SIZE_X as f32,  texture_ground_bg.height())),
+                ..Default::default()
+            },
+        );
+
         player.update(dt, &mut bullets, &textures);
         player.draw();
+
+        player_score +=1; 
+        let score_text = format!("{}", player_score); 
+        let mut font_center = GAME_SIZE_X as f32 * 0.5f32;
+        font_center -= score_text.len() as f32 * 0.5f32 * 20f32 *0.6f32;
+        draw_text_ex(score_text.as_ref(), font_center, 40.0
+            , TextParams{
+                font,
+                font_size: 20u16,
+                font_scale: 1f32,
+                color: YELLOW,
+            }
+        );
 
         set_default_camera();
 

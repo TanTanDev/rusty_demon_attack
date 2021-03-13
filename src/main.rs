@@ -1,7 +1,8 @@
 use macroquad::prelude::*;
 
-const GAME_SIZE_X: i32 = 160;
-const GAME_SIZE_Y: i32 = 192;
+//const GAME_SIZE_X: i32 = 160;
+const GAME_SIZE_X: i32 = 240;
+const GAME_SIZE_Y: i32 = 130;
 const GAME_CENTER_X: f32 = GAME_SIZE_X as f32 * 0.5f32;
 const GAME_CENTER_Y: f32 = GAME_SIZE_Y as f32 * 0.5f32;
 const _ASPECT_RATIO: f32 = GAME_SIZE_X as f32 / GAME_SIZE_Y as f32;
@@ -555,8 +556,10 @@ async fn main() {
         let dt = get_frame_time();
 
         set_camera(Camera2D {
-            zoom: vec2(0.01, 0.01),
-            target: vec2(GAME_SIZE_X as f32*0.5f32, GAME_SIZE_Y as f32 * 0.5f32),
+            //zoom: vec2(0.01, 0.01),
+            // I have no idea why the zoom is this way lmao
+            zoom: vec2(1./GAME_SIZE_X as f32*2., 1./GAME_SIZE_Y as f32*2.),
+            target: vec2((GAME_SIZE_X as f32*0.5f32).floor(), (GAME_SIZE_Y as f32 * 0.5f32).floor()),
             render_target: Some(game_render_target),
             ..Default::default()
         });
@@ -666,11 +669,11 @@ async fn main() {
         set_default_camera();
 
         // calculate game view size based on window size
-        let game_diff_w = screen_width() / 2. * GAME_SIZE_X as f32;
+        let game_diff_w = screen_width() / GAME_SIZE_X as f32;
         let game_diff_h = screen_height() / GAME_SIZE_Y as f32;
         let aspect_diff = game_diff_w.min(game_diff_h);
 
-        let scaled_game_size_w = GAME_SIZE_X as f32 * 2. * aspect_diff;
+        let scaled_game_size_w = GAME_SIZE_X as f32 * aspect_diff;
         let scaled_game_size_h = GAME_SIZE_Y as f32 * aspect_diff;
 
         let width_padding = (screen_width() - scaled_game_size_w) * 0.5f32;

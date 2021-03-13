@@ -15,12 +15,14 @@ const PLAYER_SHOOT_TIME: f32 = 0.8f32;
 const PLAYER_BULLET_SPEED: f32 = 80f32;
 const PLAYER_LIVES_START: i32 = 7i32;
 const PLAYER_LIVES_MAX: i32 = 7i32;
+const PLAYER_TIME_INVISBLE: f32 = 2f32;
 
-const ENEMY_SPEED: f32 = 40f32;
+const ENEMY_SPEED: f32 = 0.3f32;
 const ENEMY_BULLET_SPEED: f32 = 80f32;
 const ENEMY_SHOOT_TIME: f32 = 2f32;
 const ENEMY_ANIM_TIME_SPAWN: f32 = 0.7f32;
-const ENEMY_ANIM_SPAWN_SCALE: f32 = 3.0f32;
+const ENEMY_ANIM_TIME_FLAP: f32 = 0.12f32;
+const ENEMY_ANIM_SPAWN_SCALE: f32 = 4.0f32;
 // how far away the spawn animation starts
 const ENEMY_ANIM_DISTANCE: f32 = 140f32;
 // only one enemy should spawn at a time, this delay
@@ -134,6 +136,7 @@ pub struct EnemyStateShared {
     collision_rect: Rect,
     health: i32,
     death_method: EnemyDeathMethod,
+    animation_timer: f32,
 }
 
 pub struct EnemyStateNormal {
@@ -158,6 +161,7 @@ impl Enemy {
                 collision_rect: Rect::new(0f32, 0f32, texture.width(), texture.height()),
                 health,
                 death_method,
+                animation_timer: 0f32,
             },
             state: EnemyState::Spawning(EnemyStateSpawning{
                 spawn_timer: 0f32,
@@ -199,9 +203,13 @@ impl Enemy {
     }
 
     fn update_state_normal(state_shared: &mut EnemyStateShared, dt: f32, bullets: &mut Vec::<Bullet>, textures: &Textures, state_data: &mut EnemyStateNormal) -> Option<EnemyCommand> {
-        state_shared.pos.x += rand::gen_range(-1f32, 1f32);
-        state_shared.pos.y += rand::gen_range(-1f32, 1f32);
+        state_shared.pos.x += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED;
+        state_shared.pos.y += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED;
         state_data.shoot_timer += dt;
+        state_shared.animation_timer += dt;
+        if state_shared.animation_timer > ENEMY_ANIM_TIME_FLAP*4f32 {
+            state_shared.animation_timer -= ENEMY_ANIM_TIME_FLAP*4f32;
+        }
         if state_data.shoot_timer > ENEMY_SHOOT_TIME {
             let spawn_offset = vec2(0f32, 0f32);
             bullets.push(Bullet::new(state_shared.pos + spawn_offset, BulletHurtType::Player, &textures));
@@ -259,7 +267,7 @@ impl Enemy {
     }
 
     fn draw_state_normal(&self) {
-        let rand_frame = rand::gen_range(0i32, 2i32);
+        let rand_frame = (self.state_shared.animation_timer/ENEMY_ANIM_TIME_FLAP).floor();  
 
         let time = get_time()*3.1415f64;
         let rot = (time.sin()+1f64)*0.5f64*3.141596f64*2f64;
@@ -270,15 +278,15 @@ impl Enemy {
         // Left wing
         draw_texture_ex(
             self.state_shared.texture,
-            self.state_shared.pos.x-((self.state_shared.texture.width()/3.0f32)*1.0f32),
+            self.state_shared.pos.x-((self.state_shared.texture.width()/4.0f32)*1.0f32),
             self.state_shared.pos.y,
             WHITE,
             DrawTextureParams {
                 rotation: 0f32,
                 source: Some(Rect::new(
-                    self.state_shared.texture.width() / 3f32 * rand_frame as f32,
+                    self.state_shared.texture.width() / 4f32 * rand_frame as f32,
                     0f32,
-                    self.state_shared.texture.width() / 3f32,
+                    self.state_shared.texture.width() / 4f32,
                     self.state_shared.texture.height(),
                 )),
                 ..Default::default()
@@ -294,9 +302,9 @@ impl Enemy {
                 rotation: 0f32,
                 flip_x: true,
                 source: Some(Rect::new(
-                    self.state_shared.texture.width() / 3f32 * rand_frame as f32,
+                    self.state_shared.texture.width() / 4f32 * rand_frame as f32,
                     0f32,
-                    self.state_shared.texture.width() / 3f32,
+                    self.state_shared.texture.width() / 4f32,
                     self.state_shared.texture.height(),
                 )),
                 ..Default::default()
@@ -312,22 +320,38 @@ impl Enemy {
     }
 }
 
+#[derive(PartialEq)]
+pub enum PlayerState
+{
+    Normal,
+    // time left to be invisible
+    Invisible(f32),
+}
+
+pub enum PlayerCommand {
+    ChangeState(PlayerState),
+}
+
 pub struct Player {
     pos: Vec2,
     texture: Texture2D,
+    texture_explotion: Texture2D,
     bullet_decoy_texture: Texture2D,
     shoot_timer: f32,
     collision_rect: Rect,
+    state: PlayerState,
 }
 
 impl Player {
-    pub fn new(pos: Vec2, texture: Texture2D, bullet_decoy_texture: Texture2D) -> Self {
+    pub fn new(pos: Vec2, texture: Texture2D, bullet_decoy_texture: Texture2D, texture_explotion: Texture2D) -> Self {
         Player {
             pos, 
             texture,
             bullet_decoy_texture,
+            texture_explotion,
             shoot_timer: 0f32,
             collision_rect: Rect::new(pos.x, pos.y, 7.0f32, 6.0f32),
+            state: PlayerState::Normal,
         }
     }
 
@@ -339,15 +363,43 @@ impl Player {
         if is_key_down(KEY_RIGHT) {
             self.pos.x += PLAYER_SPEED * dt; 
         }
-        if is_key_down(KEY_SHOOT) {
-            if self.shoot_timer >= PLAYER_SHOOT_TIME {
-                let spawn_offset = vec2(3f32, -4f32);
-                bullets.push(Bullet::new(self.pos + spawn_offset, BulletHurtType::Enemy, &textures));
-                self.shoot_timer = 0f32;
+
+        // state specific update
+        let player_command_optional = match &mut self.state {
+            PlayerState::Normal => {
+                if is_key_down(KEY_SHOOT) {
+                    if self.shoot_timer >= PLAYER_SHOOT_TIME {
+                        let spawn_offset = vec2(3f32, -4f32);
+                        bullets.push(Bullet::new(self.pos + spawn_offset, BulletHurtType::Enemy, &textures));
+                        self.shoot_timer = 0f32;
+                    }
+                }
+                None
+            },
+            PlayerState::Invisible(time_left) => {
+                *time_left -= dt;
+                if *time_left <= 0.0f32 {
+                    Some(PlayerCommand::ChangeState(PlayerState::Normal))
+                } else {
+                None
+                }
             }
-        }
+        };
+
+        self.process_command_optional(player_command_optional);
+
         self.collision_rect.x = self.pos.x;
         self.collision_rect.y = self.pos.y;
+    }
+
+    pub fn process_command_optional(&mut self, command_optional: Option<PlayerCommand>) {
+        if let Some(player_command) = command_optional {
+            match player_command {
+                PlayerCommand::ChangeState(state) => {
+                    self.state = state;
+                }
+            }
+        }
     }
 
     pub fn overlaps(&self, other_rect: &Rect) -> bool {
@@ -355,6 +407,13 @@ impl Player {
     }
 
     pub fn draw(&self) {
+        match self.state {
+            PlayerState::Normal => self.draw_state_normal(),
+            PlayerState::Invisible(time_left) => self.draw_state_invisible(&time_left),
+        }
+    }
+
+    pub fn draw_state_normal(&self) {
         let rect = self.collision_rect;
         //draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 2.0f32, GREEN);
         draw_texture_ex(
@@ -381,6 +440,31 @@ impl Player {
                     0f32,
                     self.bullet_decoy_texture.width() / 3f32,
                     self.bullet_decoy_texture.height(),
+                )),
+                ..Default::default()
+            },
+        );
+    }
+
+    pub fn draw_state_invisible(&self, time_left: &f32) {
+        let anim_frames = 7f32;
+        let time_per_frame = PLAYER_TIME_INVISBLE / anim_frames;
+        let fraction = (PLAYER_TIME_INVISBLE - time_left)/PLAYER_TIME_INVISBLE;
+        let frame_index = (PLAYER_TIME_INVISBLE - time_left)/time_per_frame;
+        let frame_index = frame_index.floor();
+
+        draw_texture_ex(
+            self.texture_explotion,
+            self.pos.x-5f32,
+            self.pos.y-4f32,
+            WHITE,
+            DrawTextureParams {
+                rotation: fraction*3.1415f32*2f32,
+                source: Some(Rect::new(
+                    self.texture_explotion.width() / anim_frames * frame_index,
+                    0f32,
+                    self.texture_explotion.width() / anim_frames,
+                    self.texture_explotion.height(),
                 )),
                 ..Default::default()
             },
@@ -423,6 +507,7 @@ async fn main() {
     let mut texture_demon_1: Texture2D = load_texture("resources/demon_1.png").await;
     let mut texture_demon_2: Texture2D = load_texture("resources/demon_2.png").await;
     let mut texture_player: Texture2D = load_texture("resources/player.png").await;
+    let mut texture_player_explotion: Texture2D = load_texture("resources/player_explotion.png").await;
     let mut texture_player_missile: Texture2D = load_texture("resources/player_missile.png").await;
     let mut texture_demon_missile: Texture2D = load_texture("resources/demon_missile.png").await;
     let mut texture_ground_bg: Texture2D = load_texture("resources/ground_bg.png").await;
@@ -431,6 +516,7 @@ async fn main() {
     set_texture_filter(texture_demon_1, FilterMode::Nearest);
     set_texture_filter(texture_demon_2, FilterMode::Nearest);
     set_texture_filter(texture_player, FilterMode::Nearest);
+    set_texture_filter(texture_player_explotion, FilterMode::Nearest);
     set_texture_filter(texture_player_missile, FilterMode::Nearest);
     set_texture_filter(texture_demon_missile, FilterMode::Nearest);
     set_texture_filter(texture_ground_bg, FilterMode::Nearest);
@@ -459,7 +545,7 @@ async fn main() {
     }
 
     let player_spawn_y = GAME_SIZE_Y as f32 - texture_ground_bg.height() - texture_player.height();
-    let mut player = Player::new(vec2(GAME_CENTER_X, player_spawn_y), texture_player, texture_player_missile);
+    let mut player = Player::new(vec2(GAME_CENTER_X, player_spawn_y), texture_player, texture_player_missile, texture_player_explotion);
 
     let mut game_manager = GameManager {
         spawn_timer: 0f32,
@@ -490,7 +576,12 @@ async fn main() {
         // bullets hurting player
         for (i, bullet) in bullets.iter_mut().filter(|b| b.hurt_type == BulletHurtType::Player).enumerate() {
             if bullet.overlaps(&player.collision_rect) {
+                if player.state != PlayerState::Normal {
+                    continue;
+                }
                 player_lives -= 1;
+                // CHANGE PLAYER STATE
+                player.process_command_optional(Some(PlayerCommand::ChangeState(PlayerState::Invisible(PLAYER_TIME_INVISBLE))));
                 if player_lives <= 0 {
                     debug!("IMPLEMENT LOSE STATE!");
                 }

@@ -8,3 +8,6 @@ edition = "2018"
 
 [dependencies]
 macroquad = "0.3.0-alpha.15"
+
+# linear interpolation library
+lininterp = "0.1.3"

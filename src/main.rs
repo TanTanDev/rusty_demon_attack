@@ -11,6 +11,7 @@ const _ASPECT_RATIO: f32 = GAME_SIZE_X as f32 / GAME_SIZE_Y as f32;
 const KEY_RIGHT: KeyCode = KeyCode::Right;
 const KEY_LEFT: KeyCode = KeyCode::Left;
 const KEY_SHOOT: KeyCode = KeyCode::Space;
+const KEY_START_GAME: KeyCode = KeyCode::Space;
 
 const SCORE_NORMAL: i32 = 100;
 const SCORE_MINI: i32 = 20;
@@ -18,14 +19,16 @@ const SCORE_MINI: i32 = 20;
 const SCORE_KILL_ALL: i32 = 1000;
 const SCORE_SURVIVED_ALL: i32 = 750;
 
-const PLAYER_SPEED: f32 = 80f32;
+const PLAYER_SPEED: f32 = 90f32;
 const PLAYER_SHOOT_TIME: f32 = 0.8f32;
 const PLAYER_BULLET_SPEED: f32 = 80f32;
-const PLAYER_LIVES_START: i32 = 7i32;
+const PLAYER_LIVES_START: i32 = 3i32;
 const PLAYER_LIVES_MAX: i32 = 7i32;
 const PLAYER_TIME_INVISBLE: f32 = 2f32;
 
 const ENEMY_SPEED: f32 = 50.0f32;
+const ENEMY_ANGLE_SPEED_RANGE: Vec2 = Vec2{x: 0.2f32, y: 3f32};
+
 const ENEMY_SPEED_HOMING: Vec2 = Vec2{x: 60f32, y: 30f32};
 const ENEMY_BULLET_SPEED: f32 = 80f32;
 const ENEMY_SHOOT_TIME: f32 = 2f32;
@@ -42,7 +45,9 @@ const ENEMY_ANIM_DISTANCE: f32 = 140f32;
 const ENEMY_MINI_HOMING_TIME_RANGE: Vec2 = Vec2{x: 4f32, y: 10f32};
 
 // Enemy Spawn management
-const ENEMY_MAX_COUNT: i32 = 5;
+const ENEMY_SPAWN_STARTING_COUNT: i32 = 2;
+const ENEMY_SPAWN_MAX_COUNT: i32 = 9;
+const TIME_UNTIL_MAX_DIFFICULTY: f32 = 70f32;
 // spawn every x sec
 const ENEMY_SPAWN_TIME: f32 = 0.5f32;
 
@@ -76,10 +81,10 @@ pub struct Bullet {
 }
 
 impl Bullet {
-    pub fn new(pos: Vec2, hurt_type: BulletHurtType, textures: &Textures) -> Self {
+    pub fn new(pos: Vec2, hurt_type: BulletHurtType, resources: &Resources) -> Self {
         let (vel, texture) = match hurt_type{
-            BulletHurtType::Enemy => (vec2(0f32, -1f32 * PLAYER_BULLET_SPEED), textures.player_missile), 
-            BulletHurtType::Player => (vec2(0f32, ENEMY_BULLET_SPEED), textures.demon_missile),
+            BulletHurtType::Enemy => (vec2(0f32, -1f32 * PLAYER_BULLET_SPEED), resources.player_missile), 
+            BulletHurtType::Player => (vec2(0f32, ENEMY_BULLET_SPEED), resources.demon_missile),
         };
 
         Bullet {
@@ -172,6 +177,8 @@ impl EnemyColor {
 pub struct EnemyStateShared {
     texture: Texture2D,
     pos: Vec2,
+    angle: f32,
+    angle_speed: f32,
     collision_rect: Rect,
     health: i32,
     death_method: EnemyDeathMethod,
@@ -220,6 +227,8 @@ impl Enemy {
                 texture,
                 collision_rect: Rect::new(0f32, 0f32, texture.width(), texture.height()),
                 health,
+                angle: 0f32,
+                angle_speed: rand::gen_range(ENEMY_ANGLE_SPEED_RANGE.x, ENEMY_ANGLE_SPEED_RANGE.y),
                 death_method,
                 animation_timer: 0f32,
                 enemy_type,
@@ -232,11 +241,11 @@ impl Enemy {
         }
     }
 
-    pub fn update(&mut self, dt: f32, bullets: &mut Vec::<Bullet>, textures: &Textures, player_pos: &Vec2, game_manager: &mut WaveManager) {
+    pub fn update(&mut self, dt: f32, bullets: &mut Vec::<Bullet>, resources: &Resources, player_pos: &Vec2, game_manager: &mut WaveManager) {
         let command_optional = match &mut self.state {
             EnemyState::Spawning(state_data) => Self::update_state_spawning(&mut self.state_shared, dt, state_data),
-            EnemyState::Normal(state_data) => Self::update_state_normal(&mut self.state_shared, dt, bullets, textures, state_data),
-            EnemyState::Shooting(state_data) => Self::update_state_shooting(&mut self.state_shared, dt, bullets, textures, state_data),
+            EnemyState::Normal(state_data) => Self::update_state_normal(&mut self.state_shared, dt, bullets, resources, state_data),
+            EnemyState::Shooting(state_data) => Self::update_state_shooting(&mut self.state_shared, dt, bullets, resources, state_data),
             EnemyState::Homing(state_data) => Self::update_state_homing(&mut self.state_shared, dt, state_data, player_pos, game_manager),
         };
         match command_optional {
@@ -288,9 +297,13 @@ impl Enemy {
         None
     }
 
-    fn update_state_normal(state_shared: &mut EnemyStateShared, dt: f32, bullets: &mut Vec::<Bullet>, textures: &Textures, state_data: &mut EnemyStateNormal) -> Option<EnemyCommand> {
-        state_shared.pos.x += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED * dt;
-        state_shared.pos.y += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED * dt;
+    fn update_state_normal(state_shared: &mut EnemyStateShared, dt: f32, bullets: &mut Vec::<Bullet>, resources: &Resources, state_data: &mut EnemyStateNormal) -> Option<EnemyCommand> {
+        let angle_change_speed = 3.1415f32 * state_shared.angle_speed;
+        state_shared.angle += (get_time() as f32 * angle_change_speed).sin() * 3.1415f32 * 2f32 * dt;
+        let dir = vec2(state_shared.angle.sin(), -state_shared.angle.cos());
+        state_shared.pos += dir * ENEMY_SPEED * dt;
+        // state_shared.pos.x += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED * dt;
+        // state_shared.pos.y += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED * dt;
         Self::clamp_in_view(&mut state_shared.pos);
         state_shared.collision_rect.x = state_shared.pos.x - state_shared.texture.width()*0.5f32;
         state_shared.collision_rect.y = state_shared.pos.y;
@@ -310,12 +323,15 @@ impl Enemy {
         }
         if state_data.shoot_timer > ENEMY_SHOOT_TIME {
             let shot_count = rand::gen_range(1, ENEMY_MAX_BURST_COUNT);
+            // every time we change state, the enemy will chose a random speed at which it changes its velocity
+            state_shared.angle_speed = rand::gen_range(ENEMY_ANGLE_SPEED_RANGE.x, ENEMY_ANGLE_SPEED_RANGE.y);
+            state_shared.angle = rand::gen_range(-3.14f32, 3.14f32);
             return Some(EnemyCommand::ChangeState(EnemyState::Shooting(EnemyStateShooting{shoot_timer: ENEMY_SHOOT_BURST_TIME, shots_left: shot_count,})))
         }
         None
     }
 
-    fn update_state_shooting(state_shared: &mut EnemyStateShared, dt: f32, bullets: &mut Vec::<Bullet>, textures: &Textures, state_data: &mut EnemyStateShooting) -> Option<EnemyCommand> {
+    fn update_state_shooting(state_shared: &mut EnemyStateShared, dt: f32, bullets: &mut Vec::<Bullet>, resources: &Resources, state_data: &mut EnemyStateShooting) -> Option<EnemyCommand> {
         state_shared.pos.x += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED * 0.5f32 * dt;
         state_shared.pos.y += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED * 0.5f32 * dt;
         Self::clamp_in_view(&mut state_shared.pos);
@@ -328,16 +344,16 @@ impl Enemy {
             let should_spawn_2 = rand::gen_range(0, 2) > 0;
             if should_spawn_2 {
                 let spawn_offset = vec2((state_shared.texture.width()/4f32)*0.5f32, 0f32);
-                bullets.push(Bullet::new(state_shared.pos + spawn_offset, BulletHurtType::Player, &textures));
-                bullets.push(Bullet::new(state_shared.pos - spawn_offset, BulletHurtType::Player, &textures));
+                bullets.push(Bullet::new(state_shared.pos + spawn_offset, BulletHurtType::Player, &resources));
+                bullets.push(Bullet::new(state_shared.pos - spawn_offset, BulletHurtType::Player, &resources));
             }
             else {
                 let spawn_offset = vec2(0f32, -3f32);
-                bullets.push(Bullet::new(state_shared.pos + spawn_offset, BulletHurtType::Player, &textures));
+                bullets.push(Bullet::new(state_shared.pos + spawn_offset, BulletHurtType::Player, &resources));
             }
 
             // for fun move enemy up when shooting
-            state_shared.pos.y -= 1f32;
+            state_shared.pos.y -= 2f32;
         }
 
         state_shared.collision_rect.x = state_shared.pos.x - state_shared.texture.width()*0.5f32;
@@ -569,7 +585,15 @@ impl Player {
         }
     }
 
-    pub fn update(&mut self, dt: f32, bullets: &mut Vec::<Bullet>, textures: &Textures) {
+    pub fn reset(&mut self, resources: &Resources) {
+        let player_spawn_y = GAME_SIZE_Y as f32 - resources.ground_bg.height() - resources.player.height();
+        let player_pos = vec2(GAME_CENTER_X, player_spawn_y);
+        self.pos = player_pos;
+        self.shoot_timer = 0f32;
+        self.state = PlayerState::Normal;
+    }
+
+    pub fn update(&mut self, dt: f32, bullets: &mut Vec::<Bullet>, resources: &Resources) {
         self.shoot_timer += dt;
         if is_key_down(KEY_LEFT) {
             self.pos.x -= PLAYER_SPEED * dt; 
@@ -590,7 +614,7 @@ impl Player {
                 if is_key_down(KEY_SHOOT) {
                     if self.shoot_timer >= PLAYER_SHOOT_TIME {
                         let spawn_offset = vec2(3f32, -4f32);
-                        bullets.push(Bullet::new(self.pos + spawn_offset, BulletHurtType::Enemy, &textures));
+                        bullets.push(Bullet::new(self.pos + spawn_offset, BulletHurtType::Enemy, &resources));
                         self.shoot_timer = 0f32;
                     }
                 }
@@ -692,7 +716,7 @@ impl Player {
     }
 }
 
-pub struct Textures {
+pub struct Resources {
     demons_normal_purple: Vec::<Texture2D>,
     demons_normal_green: Vec::<Texture2D>,
     demons_normal_red: Vec::<Texture2D>,
@@ -702,11 +726,20 @@ pub struct Textures {
 
     demon_missile: Texture2D,
     player_missile: Texture2D,
+    player: Texture2D,
+    player_explotion: Texture2D,
+    ground_bg: Texture2D,
+    life: Texture2D,
+
+    font: Font,
 }
 
-impl Textures {
-    pub fn new(demon_missile: Texture2D, player_missile: Texture2D) -> Self {
-        Textures {
+impl Resources {
+    pub fn new(demon_missile: Texture2D, player_missile: Texture2D
+        , player: Texture2D, player_explotion: Texture2D
+        , ground_bg: Texture2D, life: Texture2D, font: Font) -> Self
+    {
+        Resources {
             demons_normal_purple: Vec::<Texture2D>::new(),
             demons_normal_green: Vec::<Texture2D>::new(),
             demons_normal_red: Vec::<Texture2D>::new(),
@@ -715,6 +748,11 @@ impl Textures {
             demons_mini_red: Vec::<Texture2D>::new(),
             demon_missile,
             player_missile,
+            player,
+            player_explotion,
+            ground_bg,
+            life,
+            font,
         }
     }
 
@@ -787,13 +825,37 @@ pub enum LastEnemyDeathReason {
 pub struct WaveManager {
     state: WaveManagerState,
     last_enemy_death_reason: LastEnemyDeathReason,
+    internal_timer: f32,
 }
 
 impl WaveManager {
-    pub fn update(&mut self, dt: f32, enemies: &mut Vec<Enemy>, textures: &Textures) -> Option<WaveManagerMessage> {
+    pub fn new () -> Self {
+        let enemies_left = ENEMY_SPAWN_STARTING_COUNT;
+        WaveManager {
+            state: WaveManagerState::Spawning(WaveManagerStateSpawning{spawn_timer: 0f32, enemies_left,}),
+            last_enemy_death_reason: LastEnemyDeathReason::Environment,
+            internal_timer: 0f32,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        let enemies_left = ENEMY_SPAWN_STARTING_COUNT;
+        self.state = WaveManagerState::Spawning(WaveManagerStateSpawning{spawn_timer: 0f32, enemies_left,});
+        self.last_enemy_death_reason = LastEnemyDeathReason::Environment;
+        self.internal_timer = 0f32;
+    }
+
+    fn get_enemy_spawn_count(time: &f32) -> i32 {
+        let fraction = time / TIME_UNTIL_MAX_DIFFICULTY;
+        let spawn_countf32 = lininterp::lerp(&(ENEMY_SPAWN_STARTING_COUNT as f32), &(ENEMY_SPAWN_MAX_COUNT as f32), &fraction);
+        spawn_countf32 as i32
+    }
+
+    pub fn update(&mut self, dt: f32, enemies: &mut Vec<Enemy>, resources: &Resources) -> Option<WaveManagerMessage> {
+        self.internal_timer += dt;
         let state_command_optional = match &mut self.state {
-            WaveManagerState::Spawning(game_state_spawning) => Self::update_state_spawning(game_state_spawning, dt, enemies, textures),
-            WaveManagerState::Battle =>  Self::update_state_battle(dt, enemies),
+            WaveManagerState::Spawning(game_state_spawning) => Self::update_state_spawning(game_state_spawning, dt, enemies, resources),
+            WaveManagerState::Battle => Self::update_state_battle(dt, enemies, &self.internal_timer),
         };
 
         if let Some(state_command) = state_command_optional {
@@ -811,19 +873,20 @@ impl WaveManager {
         None
     }
 
-    fn update_state_battle(dt: f32, enemies: &mut Vec<Enemy>) -> Option<WaveManagerCommand> {
+    fn update_state_battle(dt: f32, enemies: &mut Vec<Enemy>, internal_time: &f32) -> Option<WaveManagerCommand> {
         if enemies.len() <= 0 {
-            return Some(WaveManagerCommand::ChangeState(WaveManagerState::Spawning(WaveManagerStateSpawning{enemies_left: 9, spawn_timer: 0f32,})));
+            let enemies_left = Self::get_enemy_spawn_count(internal_time);
+            return Some(WaveManagerCommand::ChangeState(WaveManagerState::Spawning(WaveManagerStateSpawning{enemies_left, spawn_timer: 0f32,})));
         }
         None
     }
 
-    fn update_state_spawning(game_state_spawning: &mut WaveManagerStateSpawning, dt: f32, enemies: &mut Vec<Enemy>, textures: &Textures) -> Option<WaveManagerCommand> {
+    fn update_state_spawning(game_state_spawning: &mut WaveManagerStateSpawning, dt: f32, enemies: &mut Vec<Enemy>, resources: &Resources) -> Option<WaveManagerCommand> {
         game_state_spawning.spawn_timer += dt;
         if game_state_spawning.spawn_timer > ENEMY_SPAWN_TIME { 
             game_state_spawning.enemies_left -= 1;
             game_state_spawning.spawn_timer -= ENEMY_SPAWN_TIME;
-            spawn_enemy(enemies, &textures, SpawnBlueprint::Normal, EnemyColor::random());
+            spawn_enemy(enemies, &resources, SpawnBlueprint::Normal, EnemyColor::random());
         }
         if game_state_spawning.enemies_left <= 0 {
             return Some(WaveManagerCommand::ChangeState(WaveManagerState::Battle));
@@ -838,7 +901,7 @@ pub enum SpawnBlueprint {
 }
 
 // construct an enemy with randomized features based on a blueprint
-pub fn spawn_enemy(enemies: &mut Vec<Enemy>, textures: &Textures, spawn_blueprint: SpawnBlueprint, enemy_color: EnemyColor) { 
+pub fn spawn_enemy(enemies: &mut Vec<Enemy>, resources: &Resources, spawn_blueprint: SpawnBlueprint, enemy_color: EnemyColor) { 
     let health = 1;
     let enemy = match spawn_blueprint{
         SpawnBlueprint::Normal => {
@@ -851,10 +914,10 @@ pub fn spawn_enemy(enemies: &mut Vec<Enemy>, textures: &Textures, spawn_blueprin
                 EnemyDeathMethod::None
             };
 
-            Enemy::new(spawn_pos, textures.rand_enemy_normal(enemy_color), health, death_method, EnemyType::Normal, enemy_color)
+            Enemy::new(spawn_pos, resources.rand_enemy_normal(enemy_color), health, death_method, EnemyType::Normal, enemy_color)
         }
         SpawnBlueprint::Mini(pos) => {
-            Enemy::new(pos, textures.rand_enemy_mini(enemy_color), health, EnemyDeathMethod::None, EnemyType::Mini, enemy_color)
+            Enemy::new(pos, resources.rand_enemy_mini(enemy_color), health, EnemyDeathMethod::None, EnemyType::Mini, enemy_color)
         }
     };
     enemies.push(enemy);
@@ -907,8 +970,17 @@ pub fn draw_lives(player_lives: &i32, texture_life: Texture2D, texture_ground_bg
     }
 }
 
+
+pub struct MenuPayload {
+    score: i32,
+}
+// hacky way to transfer data between states
+pub enum ChangeStatePayload {
+    MenuPayload(MenuPayload),
+}
+
 pub enum GameStateCommand {
-    ChangeState(GameStateIdentifier),
+    ChangeState(GameStateIdentifier, Option<ChangeStatePayload>),
 }
 
 #[derive(PartialEq, Eq, Hash)]
@@ -918,57 +990,302 @@ pub enum GameStateIdentifier {
 }
 
 pub trait GameState {
-    fn update(&mut self, dt: f32) -> Option<GameStateCommand>;
-    fn draw(&self);
-    fn on_enter(&mut self);
+    fn update(&mut self, dt: f32, resources: &Resources) -> Option<GameStateCommand>;
+    fn draw(&self, resources: &Resources);
+    fn draw_unscaled(&self, resources: &Resources);
+    fn on_enter(&mut self, resources: &Resources, payload_optional: Option<ChangeStatePayload>);
 }
 
 
 pub struct GameStateGame {
+    wave_manager: WaveManager,
+    player_score: i32,
+    player_lives: i32,
+    bullets: Vec::<Bullet>,
+    enemies: Vec::<Enemy>,
+    player: Player,
+}
+
+impl GameStateGame {
+    pub fn new (resources: &Resources) -> Self {
+        let player_spawn_y = GAME_SIZE_Y as f32 - resources.ground_bg.height() - resources.player.height();
+        let player_pos = vec2(GAME_CENTER_X, player_spawn_y);
+        let player = Player::new(player_pos, resources.player, resources.player_missile, resources.player_explotion);
+
+        GameStateGame {
+            wave_manager: WaveManager::new(),
+            player_score: 0,
+            player_lives: PLAYER_LIVES_START,
+            bullets: Vec::<Bullet>::new(),
+            enemies: Vec::<Enemy>::new(),
+            player,
+        }
+    }
 }
 
 impl GameState for GameStateGame {
-    fn update(&mut self, dt: f32) -> Option<GameStateCommand> {
+    fn on_enter(&mut self, resources: &Resources, _payload_optional: Option<ChangeStatePayload>) {
+        self.wave_manager.reset();
+        self.player.reset(resources);
+        self.player_score = 0;
+        self.player_lives = PLAYER_LIVES_START;
+        self.enemies.clear();
+        self.bullets.clear();
+    }
+
+    fn update(&mut self, dt: f32, resources: &Resources) -> Option<GameStateCommand> {
+        let manager_message_optional = self.wave_manager.update(dt, &mut self.enemies, &resources);
+        if let Some(manager_message) = manager_message_optional {
+            match manager_message {
+                WaveManagerMessage::LevelCleared => {
+                    self.player_lives +=1;
+                    self.player_lives = self.player_lives.min(PLAYER_LIVES_MAX);
+                    let score_add = match self.wave_manager.last_enemy_death_reason {
+                        LastEnemyDeathReason::Environment => SCORE_SURVIVED_ALL,
+                        LastEnemyDeathReason::Player => SCORE_KILL_ALL,
+                    };
+                    self.player_score += score_add;
+                }
+            }
+        }
+
+        for enemy in self.enemies.iter_mut() {
+            enemy.update(dt, &mut self.bullets, &resources, &self.player.pos, &mut self.wave_manager);
+            enemy.draw();
+        }
+
+        for bullet in self.bullets.iter_mut() {
+            bullet.update(dt);
+            bullet.draw();
+        }
+
+        // bullets hurting player
+        for (i, bullet) in self.bullets.iter_mut().filter(|b| b.hurt_type == BulletHurtType::Player).enumerate() {
+            if bullet.overlaps(&self.player.collision_rect) {
+                if self.player.state != PlayerState::Normal {
+                    continue;
+                }
+                self.player_lives -= 1;
+                // CHANGE PLAYER STATE
+                self.player.process_command_optional(Some(PlayerCommand::ChangeState(PlayerState::Invisible(PLAYER_TIME_INVISBLE))));
+                if self.player_lives <= 0 {
+                    return Some(GameStateCommand::ChangeState(GameStateIdentifier::Menu, Some(ChangeStatePayload::MenuPayload(MenuPayload{score: self.player_score}))));
+                }
+                bullet.is_kill = true;
+                break;
+            }
+        }
+
+        // homing enemies hurting player
+        for enemy in self.enemies.iter_mut()
+            // filter enemies containing homing state, variant_eq is used so we can disregard homing data
+            .filter(|e| variant_eq(&e.state, &EnemyState::Homing(EnemyStateHoming{})))
+        {
+            if enemy.overlaps(&self.player.collision_rect) {
+                let player_invisible = variant_eq(&self.player.state, &PlayerState::Invisible(0f32));
+                if !player_invisible {
+                    self.player_lives -= 1;
+                    self.player.process_command_optional(Some(PlayerCommand::ChangeState(PlayerState::Invisible(PLAYER_TIME_INVISBLE))));
+                    enemy.state_shared.health = 0;
+                }
+            }
+        }
+
+        // todo explain
+        let mut death_methods = Vec::<(Vec2, EnemyDeathMethod, EnemyType, EnemyColor)>::with_capacity(4);
+
+        // bullets hurting enemies
+        for (i, bullet) in self.bullets.iter_mut()
+            .filter(|b| b.hurt_type == BulletHurtType::Enemy)
+            .enumerate()
+        {
+            for (i, enemy) in self.enemies.iter_mut().enumerate() {
+                if enemy.overlaps(&bullet.collision_rect) && !bullet.is_kill {
+                    enemy.state_shared.health -= 1;
+                    self.wave_manager.last_enemy_death_reason = LastEnemyDeathReason::Player;
+                    // death
+                    if enemy.state_shared.health <= 0 {
+                        death_methods.push((enemy.state_shared.pos, enemy.state_shared.death_method, enemy.state_shared.enemy_type, enemy.state_shared.enemy_color));
+                    }
+                    // can only hurt one enemy, flag for deletion
+                    bullet.is_kill = true;
+                }
+            }
+        }
+
+        for (pos, death_method, enemy_type, enemy_color) in death_methods.iter() {
+            let score_add = match enemy_type {
+                EnemyType::Normal => SCORE_NORMAL, 
+                EnemyType::Mini => SCORE_MINI,
+        };
+            self.player_score += score_add;
+            match death_method {
+                EnemyDeathMethod::None => {
+                },
+                EnemyDeathMethod::SpawnChildren(amount) => {
+                    let spawn_width = 20f32;
+                    let step = 1./(*amount as f32);
+                    for i in 0..*amount {
+                        let spawn_pos = *pos + vec2(step * spawn_width * i as f32, 0f32);
+                        spawn_enemy(&mut self.enemies, &resources, SpawnBlueprint::Mini(spawn_pos), *enemy_color);
+                    }
+                },
+            }
+        }
+
+        // remove bullets that hit something
+        self.bullets.retain(|e| !e.is_kill);
+        // remove dead enemies
+        self.enemies.retain(|e| e.state_shared.health > 0);
+
+        draw_texture_ex(
+            resources.ground_bg,
+            0f32,
+            GAME_SIZE_Y as f32 - resources.ground_bg.height(),
+            WHITE,
+            DrawTextureParams {
+                //dest_size: Some(vec2(screen_width(), screen_height())),
+                dest_size: Some(Vec2::new(GAME_SIZE_X as f32, resources.ground_bg.height())),
+                ..Default::default()
+            },
+        );
+
+        draw_lives(&self.player_lives, resources.life, &resources.ground_bg, &self.wave_manager);
+
+        self.player.update(dt, &mut self.bullets, &resources);
+        self.player.draw();
         None
     }
 
-    fn draw(&self) {
+    fn draw(&self, resources: &Resources) {
     }
 
-    fn on_enter(&mut self) {
+
+    fn draw_unscaled(&self, resources: &Resources) {
+        let game_diff_w = screen_width() / GAME_SIZE_X as f32;
+        let game_diff_h = screen_height() / GAME_SIZE_Y as f32;
+        let aspect_diff = game_diff_w.min(game_diff_h);
+
+        let scaled_game_size_w = GAME_SIZE_X as f32 * aspect_diff;
+        let scaled_game_size_h = GAME_SIZE_Y as f32 * aspect_diff;
+
+        let width_padding = (screen_width() - scaled_game_size_w) * 0.5f32;
+        let height_padding = (screen_height() - scaled_game_size_h) * 0.5f32;
+
+        let score_text = format!("{}", self.player_score); 
+        let font_size = (aspect_diff * 10f32) as u16;
+        let mut text_x = width_padding + scaled_game_size_w * 0.5f32;
+        text_x -= score_text.len() as f32 * 0.5f32 * font_size as f32 *0.6f32;
+        draw_text_ex(score_text.as_ref(), text_x, height_padding + font_size as f32 * 2f32
+            , TextParams {
+                font: resources.font,
+                font_size,
+                font_scale: 1f32,
+                color: YELLOW,
+            },
+        );
     }
 }
 
 pub struct GameStateMenu {
+    last_score_optional: Option<i32>,
+}
 
+impl GameStateMenu {
+    pub fn new() -> Self {
+        GameStateMenu {
+            last_score_optional: None,
+        }
+    }
 }
 
 impl GameState for GameStateMenu {
-    fn update(&mut self, dt: f32) -> Option<GameStateCommand> {
+    fn update(&mut self, _dt: f32, _resources: &Resources) -> Option<GameStateCommand> {
+        if is_key_down(KEY_START_GAME) {
+            return Some(GameStateCommand::ChangeState(GameStateIdentifier::Game, None));
+        }
         None
     }
 
-    fn draw(&self) {
+    fn draw(&self, resources: &Resources) {
+        draw_texture_ex(
+            resources.ground_bg,
+            0f32,
+            GAME_SIZE_Y as f32 - resources.ground_bg.height(),
+            WHITE,
+            DrawTextureParams {
+                //dest_size: Some(vec2(screen_width(), screen_height())),
+                dest_size: Some(Vec2::new(GAME_SIZE_X as f32, resources.ground_bg.height())),
+                ..Default::default()
+            },
+        );
     }
 
-    fn on_enter(&mut self) {
+    fn on_enter(&mut self, resources: &Resources, payload_optional: Option<ChangeStatePayload>) {
+        if let Some(payload) = payload_optional {
+            match payload {
+                ChangeStatePayload::MenuPayload(menu_payload) => self.last_score_optional = Some(menu_payload.score), 
+            }
+        }
+    }
+
+    fn draw_unscaled(&self, resources: &Resources) {
+        let game_diff_w = screen_width() / GAME_SIZE_X as f32;
+        let game_diff_h = screen_height() / GAME_SIZE_Y as f32;
+        let aspect_diff = game_diff_w.min(game_diff_h);
+
+        let scaled_game_size_w = GAME_SIZE_X as f32 * aspect_diff;
+        let scaled_game_size_h = GAME_SIZE_Y as f32 * aspect_diff;
+
+        let width_padding = (screen_width() - scaled_game_size_w) * 0.5f32;
+        let height_padding = (screen_height() - scaled_game_size_h) * 0.5f32;
+
+        let font_size = (aspect_diff * 10f32) as u16;
+
+        if let Some(last_score) = self.last_score_optional {
+            let score_text = format!("{}", last_score); 
+            let mut text_x = width_padding + scaled_game_size_w * 0.5f32;
+            text_x -= score_text.len() as f32 * 0.5f32 * font_size as f32 *0.6f32;
+            draw_text_ex(score_text.as_ref(), text_x, height_padding + font_size as f32 * 2f32
+                , TextParams {
+                    font: resources.font,
+                    font_size,
+                    font_scale: 1f32,
+                    color: YELLOW,
+                },
+            );
+        }
+        let start_text = "TAP SPACE TO START";
+        let mut text_x = width_padding + scaled_game_size_w * 0.5f32;
+        text_x -= start_text.len() as f32 * 0.5f32 * font_size as f32 *0.6f32;
+
+        draw_text_ex(start_text, text_x, screen_height()*0.5f32
+            , TextParams {
+                font: resources.font,
+                font_size,
+                font_scale: 1f32,
+                color: YELLOW,
+            },
+        );
     }
 }
 
 pub struct GameManager {
     states: HashMap::<GameStateIdentifier, Box::<dyn GameState>>,
     current_state_identifier: GameStateIdentifier,
+    resources: Resources,
 }
 
 impl GameManager {
-    pub fn new(all_states: Vec::<(GameStateIdentifier, Box::<dyn GameState>)>) -> Self {
+    pub fn new(all_states: Vec::<(GameStateIdentifier, Box::<dyn GameState>)>, resources: Resources) -> Self {
         let mut states = HashMap::new(); 
         for state in all_states.into_iter() {
             states.insert(state.0, state.1);
         }
         GameManager {
             states,
-            current_state_identifier: GameStateIdentifier::Menu
+            current_state_identifier: GameStateIdentifier::Menu,
+            resources,
         }
     }
 
@@ -978,25 +1295,32 @@ impl GameManager {
         // because we would have 2 state references, the current one and the one we change to.
         // (we can't set state if we are holding a reference to the current state)
         let state_command_optional = if let Some(game_state) = self.states.get_mut(&self.current_state_identifier) {
-            game_state.update(dt)
+            game_state.update(dt, &self.resources)
         } else {
             None
         };
 
         if let Some(state_command) = state_command_optional {
             match state_command {
-                GameStateCommand::ChangeState(next_state) => {
+                GameStateCommand::ChangeState(next_state, payload_optional) => {
                     self.current_state_identifier = next_state;
                     if let Some(game_state) = self.states.get_mut(&self.current_state_identifier) {
-                        game_state.on_enter();
+                        game_state.on_enter(&self.resources, payload_optional);
                     }
                 },
             }
         }
     }
+
     pub fn draw(&self) {
         if let Some(game_state) = self.states.get(&self.current_state_identifier) {
-            game_state.draw();
+            game_state.draw(&self.resources);
+        }
+    }
+
+    pub fn draw_unscaled(&self) {
+        if let Some(game_state) = self.states.get(&self.current_state_identifier) {
+            game_state.draw_unscaled(&self.resources);
         }
     }
 }
@@ -1020,39 +1344,28 @@ async fn main() {
     }
 
     let font = load_ttf_font("resources/Kenney Pixel Square.ttf").await;
-    let mut player_score: i32 = 0;
-    let mut player_lives: i32 = PLAYER_LIVES_START;
+    let mut resources = Resources::new(texture_demon_missile, texture_player_missile
+        , texture_player, texture_player_explotion, texture_ground_bg
+        , texture_life, font);
 
-    let mut textures = Textures::new(texture_demon_missile, texture_player_missile);
     {
         use EnemyColor::{Green, Purple, Red};
         use EnemyType::{Mini, Normal};
-        textures.load_texture("resources/demon_mini_green_1.png", Green, Mini).await;
-        textures.load_texture("resources/demon_mini_red_1.png", Red, Mini).await;
-        textures.load_texture("resources/demon_mini_purple_1.png", Purple, Mini).await;
-        textures.load_texture("resources/demon_normal_green_1.png", Green, Normal).await;
-        textures.load_texture("resources/demon_normal_green_2.png", Green, Normal).await;
-        textures.load_texture("resources/demon_normal_purple_1.png", Purple, Normal).await;
-        textures.load_texture("resources/demon_normal_purple_2.png", Purple, Normal).await;
-        textures.load_texture("resources/demon_normal_red_1.png", Red, Normal).await;
+        resources.load_texture("resources/demon_mini_green_1.png", Green, Mini).await;
+        resources.load_texture("resources/demon_mini_red_1.png", Red, Mini).await;
+        resources.load_texture("resources/demon_mini_purple_1.png", Purple, Mini).await;
+        resources.load_texture("resources/demon_normal_green_1.png", Green, Normal).await;
+        resources.load_texture("resources/demon_normal_green_2.png", Green, Normal).await;
+        resources.load_texture("resources/demon_normal_purple_1.png", Purple, Normal).await;
+        resources.load_texture("resources/demon_normal_purple_2.png", Purple, Normal).await;
+        resources.load_texture("resources/demon_normal_red_1.png", Red, Normal).await;
     }
 
-    let mut bullets = Vec::<Bullet>::new();
-    let mut enemies = Vec::<Enemy>::new();
-
-    let player_spawn_y = GAME_SIZE_Y as f32 - texture_ground_bg.height() - texture_player.height();
-    let mut player = Player::new(vec2(GAME_CENTER_X, player_spawn_y), texture_player, texture_player_missile, texture_player_explotion);
-
-    let mut wave_manager = WaveManager {
-        state: WaveManagerState::Spawning(WaveManagerStateSpawning{spawn_timer: 0f32, enemies_left: 15, }),
-        last_enemy_death_reason: LastEnemyDeathReason::Environment,
-    };
-
     let game_states: Vec::<(GameStateIdentifier, Box::<dyn GameState>)> = vec![
-        (GameStateIdentifier::Menu, Box::new(GameStateMenu{})),
-        (GameStateIdentifier::Game, Box::new(GameStateGame{})),
+        (GameStateIdentifier::Menu, Box::new(GameStateMenu::new())),
+        (GameStateIdentifier::Game, Box::new(GameStateGame::new(&resources))),
     ];
-    let mut game_manager = GameManager::new(game_states);
+    let mut game_manager = GameManager::new(game_states, resources);
 
     loop {
         let dt = get_frame_time();
@@ -1065,130 +1378,9 @@ async fn main() {
             ..Default::default()
         });
         clear_background(BLACK);
+
         game_manager.update(dt);
         game_manager.draw();
-
-        let manager_message_optional = wave_manager.update(dt, &mut enemies, &textures);
-        if let Some(manager_message) = manager_message_optional {
-            match manager_message {
-                WaveManagerMessage::LevelCleared => {
-                    player_lives +=1;
-                    player_lives = player_lives.min(PLAYER_LIVES_MAX);
-                    let score_add = match wave_manager.last_enemy_death_reason {
-                        LastEnemyDeathReason::Environment => SCORE_SURVIVED_ALL,
-                        LastEnemyDeathReason::Player => SCORE_KILL_ALL,
-                    };
-                    player_score += score_add;
-                }
-            }
-        }
-
-        for enemy in enemies.iter_mut() {
-            enemy.update(dt, &mut bullets, &textures, &player.pos, &mut wave_manager);
-            enemy.draw();
-        }
-
-        for bullet in bullets.iter_mut() {
-            bullet.update(dt);
-            bullet.draw();
-        }
-
-        // bullets hurting player
-        for (i, bullet) in bullets.iter_mut().filter(|b| b.hurt_type == BulletHurtType::Player).enumerate() {
-            if bullet.overlaps(&player.collision_rect) {
-                if player.state != PlayerState::Normal {
-                    continue;
-                }
-                player_lives -= 1;
-                // CHANGE PLAYER STATE
-                player.process_command_optional(Some(PlayerCommand::ChangeState(PlayerState::Invisible(PLAYER_TIME_INVISBLE))));
-                if player_lives <= 0 {
-                    debug!("IMPLEMENT LOSE STATE!");
-                }
-                bullet.is_kill = true;
-                break;
-            }
-        }
-
-        // homing enemies hurting player
-        for enemy in enemies.iter_mut()
-            // filter enemies containing homing state, variant_eq is used so we can disregard homing data
-            .filter(|e| variant_eq(&e.state, &EnemyState::Homing(EnemyStateHoming{})))
-        {
-            if enemy.overlaps(&player.collision_rect) {
-                let player_invisible = variant_eq(&player.state, &PlayerState::Invisible(0f32));
-                if !player_invisible {
-                    player_lives -= 1;
-                    player.process_command_optional(Some(PlayerCommand::ChangeState(PlayerState::Invisible(PLAYER_TIME_INVISBLE))));
-                    enemy.state_shared.health = 0;
-                }
-            }
-        }
-
-        // todo explain
-        let mut death_methods = Vec::<(Vec2, EnemyDeathMethod, EnemyType, EnemyColor)>::with_capacity(4);
-
-        // bullets hurting enemies
-        for (i, bullet) in bullets.iter_mut()
-            .filter(|b| b.hurt_type == BulletHurtType::Enemy)
-            .enumerate()
-        {
-            for (i, enemy) in enemies.iter_mut().enumerate() {
-                if enemy.overlaps(&bullet.collision_rect) && !bullet.is_kill {
-                    enemy.state_shared.health -= 1;
-                    wave_manager.last_enemy_death_reason = LastEnemyDeathReason::Player;
-                    // death
-                    if enemy.state_shared.health <= 0 {
-                        death_methods.push((enemy.state_shared.pos, enemy.state_shared.death_method, enemy.state_shared.enemy_type, enemy.state_shared.enemy_color));
-                    }
-                    // can only hurt one enemy, flag for deletion
-                    bullet.is_kill = true;
-                }
-            }
-        }
-
-        for (pos, death_method, enemy_type, enemy_color) in death_methods.iter() {
-            let score_add = match enemy_type {
-                EnemyType::Normal => SCORE_NORMAL, 
-                EnemyType::Mini => SCORE_MINI,
-            };
-            player_score += score_add;
-            match death_method {
-                EnemyDeathMethod::None => {
-                },
-                EnemyDeathMethod::SpawnChildren(amount) => {
-                    let spawn_width = 20f32;
-                    let step = 1./(*amount as f32);
-                    for i in 0..*amount {
-                        let spawn_pos = *pos + vec2(step * spawn_width * i as f32, 0f32);
-                        spawn_enemy(&mut enemies, &textures, SpawnBlueprint::Mini(spawn_pos), *enemy_color);
-                    }
-                },
-            }
-        }
-
-        // remove bullets that hit something
-        bullets.retain(|e| !e.is_kill);
-        // remove dead enemies
-        enemies.retain(|e| e.state_shared.health > 0);
-
-        draw_texture_ex(
-            texture_ground_bg,
-            0f32,
-            GAME_SIZE_Y as f32 - texture_ground_bg.height(),
-            WHITE,
-            DrawTextureParams {
-                //dest_size: Some(vec2(screen_width(), screen_height())),
-                dest_size: Some(Vec2::new(GAME_SIZE_X as f32,  texture_ground_bg.height())),
-                ..Default::default()
-            },
-        );
-
-        draw_lives(&player_lives, texture_life, &texture_ground_bg, &wave_manager);
-
-        player.update(dt, &mut bullets, &textures);
-        player.draw();
-
 
         set_default_camera();
 
@@ -1213,24 +1405,12 @@ async fn main() {
             height_padding,
             WHITE,
             DrawTextureParams {
-                //dest_size: Some(vec2(screen_width(), screen_height())),
                 dest_size: Some(Vec2::new(scaled_game_size_w, scaled_game_size_h)),
                 ..Default::default()
             },
         );
 
-        let score_text = format!("{}", player_score); 
-        let font_size = (aspect_diff * 10f32) as u16;
-        let mut text_x = width_padding + scaled_game_size_w * 0.5f32;
-        text_x -= score_text.len() as f32 * 0.5f32 * font_size as f32 *0.6f32;
-        draw_text_ex(score_text.as_ref(), text_x, height_padding + font_size as f32 * 2f32
-            , TextParams{
-                font,
-                font_size,
-                font_scale: 1f32,
-                color: YELLOW,
-            }
-        );
+        game_manager.draw_unscaled();
 
         next_frame().await
     }

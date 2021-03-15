@@ -1,6 +1,12 @@
 use macroquad::prelude::*;
 use std::collections::HashMap;
 
+use quad_snd::mixer::{Sound, SoundId, Volume};
+use quad_snd::{
+    decoder::read_wav_ext,
+    mixer::{PlaybackStyle, SoundMixer},
+};
+
 //const GAME_SIZE_X: i32 = 160;
 const GAME_SIZE_X: i32 = 240;
 const GAME_SIZE_Y: i32 = 130;
@@ -241,12 +247,12 @@ impl Enemy {
         }
     }
 
-    pub fn update(&mut self, dt: f32, bullets: &mut Vec::<Bullet>, resources: &Resources, player_pos: &Vec2, game_manager: &mut WaveManager) {
+    pub fn update(&mut self, dt: f32, bullets: &mut Vec::<Bullet>, resources: &Resources, player_pos: &Vec2, game_manager: &mut WaveManager, sound_mixer: &mut SoundMixer) {
         let command_optional = match &mut self.state {
-            EnemyState::Spawning(state_data) => Self::update_state_spawning(&mut self.state_shared, dt, state_data),
-            EnemyState::Normal(state_data) => Self::update_state_normal(&mut self.state_shared, dt, bullets, resources, state_data),
-            EnemyState::Shooting(state_data) => Self::update_state_shooting(&mut self.state_shared, dt, bullets, resources, state_data),
-            EnemyState::Homing(state_data) => Self::update_state_homing(&mut self.state_shared, dt, state_data, player_pos, game_manager),
+            EnemyState::Spawning(state_data) => Self::update_state_spawning(&mut self.state_shared, dt, state_data, sound_mixer),
+            EnemyState::Normal(state_data) => Self::update_state_normal(&mut self.state_shared, dt, bullets, resources, state_data, sound_mixer),
+            EnemyState::Shooting(state_data) => Self::update_state_shooting(&mut self.state_shared, dt, bullets, resources, state_data, sound_mixer),
+            EnemyState::Homing(state_data) => Self::update_state_homing(&mut self.state_shared, dt, state_data, player_pos, game_manager, sound_mixer, resources),
         };
         match command_optional {
             None => {},
@@ -282,7 +288,7 @@ impl Enemy {
 
     }
 
-    fn update_state_spawning(state_shared: &mut EnemyStateShared, dt: f32, state_data: &mut EnemyStateSpawning) -> Option<EnemyCommand> {
+    fn update_state_spawning(state_shared: &mut EnemyStateShared, dt: f32, state_data: &mut EnemyStateSpawning, sound_mixer: &mut SoundMixer) -> Option<EnemyCommand> {
         state_data.spawn_timer += dt;
         // different enemy types spawn differently 
         let end_time = match state_shared.enemy_type{
@@ -297,7 +303,7 @@ impl Enemy {
         None
     }
 
-    fn update_state_normal(state_shared: &mut EnemyStateShared, dt: f32, bullets: &mut Vec::<Bullet>, resources: &Resources, state_data: &mut EnemyStateNormal) -> Option<EnemyCommand> {
+    fn update_state_normal(state_shared: &mut EnemyStateShared, dt: f32, bullets: &mut Vec::<Bullet>, resources: &Resources, state_data: &mut EnemyStateNormal, sound_mixer: &mut SoundMixer) -> Option<EnemyCommand> {
         let angle_change_speed = 3.1415f32 * state_shared.angle_speed;
         state_shared.angle += (get_time() as f32 * angle_change_speed).sin() * 3.1415f32 * 2f32 * dt;
         let dir = vec2(state_shared.angle.sin(), -state_shared.angle.cos());
@@ -331,7 +337,7 @@ impl Enemy {
         None
     }
 
-    fn update_state_shooting(state_shared: &mut EnemyStateShared, dt: f32, bullets: &mut Vec::<Bullet>, resources: &Resources, state_data: &mut EnemyStateShooting) -> Option<EnemyCommand> {
+    fn update_state_shooting(state_shared: &mut EnemyStateShared, dt: f32, bullets: &mut Vec::<Bullet>, resources: &Resources, state_data: &mut EnemyStateShooting, sound_mixer: &mut SoundMixer) -> Option<EnemyCommand> {
         state_shared.pos.x += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED * 0.5f32 * dt;
         state_shared.pos.y += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED * 0.5f32 * dt;
         Self::clamp_in_view(&mut state_shared.pos);
@@ -351,6 +357,7 @@ impl Enemy {
                 let spawn_offset = vec2(0f32, -3f32);
                 bullets.push(Bullet::new(state_shared.pos + spawn_offset, BulletHurtType::Player, &resources));
             }
+            resources.play_sound(SoundIdentifier::EnemyShoot, sound_mixer);
 
             // for fun move enemy up when shooting
             state_shared.pos.y -= 2f32;
@@ -371,10 +378,11 @@ impl Enemy {
         None
     }
 
-    fn update_state_homing(state_shared: &mut EnemyStateShared, dt: f32, state_data: &mut EnemyStateHoming, player_pos: &Vec2, game_manager: &mut WaveManager) -> Option<EnemyCommand> {
+    fn update_state_homing(state_shared: &mut EnemyStateShared, dt: f32, state_data: &mut EnemyStateHoming, player_pos: &Vec2, game_manager: &mut WaveManager, sound_mixer: &mut SoundMixer, resources: &Resources) -> Option<EnemyCommand> {
         state_shared.animation_timer += dt;
         if state_shared.animation_timer > ENEMY_ANIM_TIME_FLAP*4f32 {
             state_shared.animation_timer -= ENEMY_ANIM_TIME_FLAP*4f32;
+            resources.play_sound(SoundIdentifier::Warning, sound_mixer);
         }
         // MOVE TOWARDS PLAYER
         let player_dx = player_pos.x - state_shared.pos.x;
@@ -593,7 +601,7 @@ impl Player {
         self.state = PlayerState::Normal;
     }
 
-    pub fn update(&mut self, dt: f32, bullets: &mut Vec::<Bullet>, resources: &Resources) {
+    pub fn update(&mut self, dt: f32, bullets: &mut Vec::<Bullet>, resources: &Resources, sound_mixer: &mut SoundMixer) {
         self.shoot_timer += dt;
         if is_key_down(KEY_LEFT) {
             self.pos.x -= PLAYER_SPEED * dt; 
@@ -615,6 +623,7 @@ impl Player {
                     if self.shoot_timer >= PLAYER_SHOOT_TIME {
                         let spawn_offset = vec2(3f32, -4f32);
                         bullets.push(Bullet::new(self.pos + spawn_offset, BulletHurtType::Enemy, &resources));
+                        resources.play_sound(SoundIdentifier::PlayerShoot, sound_mixer);
                         self.shoot_timer = 0f32;
                     }
                 }
@@ -716,6 +725,17 @@ impl Player {
     }
 }
 
+#[derive(PartialEq, Eq, Hash)]
+pub enum SoundIdentifier {
+    EnemyShoot,
+    PlayerOuch,
+    PlayerShoot,
+    SpawnMini,
+    Spawn,
+    Warning,
+    WaveCleared,
+}
+
 pub struct Resources {
     demons_normal_purple: Vec::<Texture2D>,
     demons_normal_green: Vec::<Texture2D>,
@@ -732,6 +752,8 @@ pub struct Resources {
     life: Texture2D,
 
     font: Font,
+
+    sounds: HashMap<SoundIdentifier, Sound>,
 }
 
 impl Resources {
@@ -753,6 +775,18 @@ impl Resources {
             ground_bg,
             life,
             font,
+            sounds: HashMap::new(),
+        }
+    }
+
+    pub fn load_sound(&mut self, bytes: &[u8], identifier: SoundIdentifier) {
+        let sound = read_wav_ext(bytes, PlaybackStyle::Once).unwrap();
+        self.sounds.insert(identifier, sound);
+    }
+
+    pub fn play_sound(&self, identifier: SoundIdentifier, mixer: &mut SoundMixer) {
+        if let Some(sound) = self.sounds.get(&identifier) {
+            mixer.play_ext(sound.clone(), Volume(1f32));
         }
     }
 
@@ -851,10 +885,10 @@ impl WaveManager {
         spawn_countf32 as i32
     }
 
-    pub fn update(&mut self, dt: f32, enemies: &mut Vec<Enemy>, resources: &Resources) -> Option<WaveManagerMessage> {
+    pub fn update(&mut self, dt: f32, enemies: &mut Vec<Enemy>, resources: &Resources, sound_mixer: &mut SoundMixer) -> Option<WaveManagerMessage> {
         self.internal_timer += dt;
         let state_command_optional = match &mut self.state {
-            WaveManagerState::Spawning(game_state_spawning) => Self::update_state_spawning(game_state_spawning, dt, enemies, resources),
+            WaveManagerState::Spawning(game_state_spawning) => Self::update_state_spawning(game_state_spawning, dt, enemies, resources, sound_mixer),
             WaveManagerState::Battle => Self::update_state_battle(dt, enemies, &self.internal_timer),
         };
 
@@ -881,12 +915,13 @@ impl WaveManager {
         None
     }
 
-    fn update_state_spawning(game_state_spawning: &mut WaveManagerStateSpawning, dt: f32, enemies: &mut Vec<Enemy>, resources: &Resources) -> Option<WaveManagerCommand> {
+    fn update_state_spawning(game_state_spawning: &mut WaveManagerStateSpawning, dt: f32, enemies: &mut Vec<Enemy>, resources: &Resources, sound_mixer: &mut SoundMixer) -> Option<WaveManagerCommand> {
         game_state_spawning.spawn_timer += dt;
         if game_state_spawning.spawn_timer > ENEMY_SPAWN_TIME { 
             game_state_spawning.enemies_left -= 1;
             game_state_spawning.spawn_timer -= ENEMY_SPAWN_TIME;
             spawn_enemy(enemies, &resources, SpawnBlueprint::Normal, EnemyColor::random());
+            resources.play_sound(SoundIdentifier::Spawn, sound_mixer);
         }
         if game_state_spawning.enemies_left <= 0 {
             return Some(WaveManagerCommand::ChangeState(WaveManagerState::Battle));
@@ -990,7 +1025,7 @@ pub enum GameStateIdentifier {
 }
 
 pub trait GameState {
-    fn update(&mut self, dt: f32, resources: &Resources) -> Option<GameStateCommand>;
+    fn update(&mut self, dt: f32, resources: &Resources, sound_mixer: &mut SoundMixer) -> Option<GameStateCommand>;
     fn draw(&self, resources: &Resources);
     fn draw_unscaled(&self, resources: &Resources);
     fn on_enter(&mut self, resources: &Resources, payload_optional: Option<ChangeStatePayload>);
@@ -1033,8 +1068,8 @@ impl GameState for GameStateGame {
         self.bullets.clear();
     }
 
-    fn update(&mut self, dt: f32, resources: &Resources) -> Option<GameStateCommand> {
-        let manager_message_optional = self.wave_manager.update(dt, &mut self.enemies, &resources);
+    fn update(&mut self, dt: f32, resources: &Resources, sound_mixer: &mut SoundMixer) -> Option<GameStateCommand> {
+        let manager_message_optional = self.wave_manager.update(dt, &mut self.enemies, &resources, sound_mixer);
         if let Some(manager_message) = manager_message_optional {
             match manager_message {
                 WaveManagerMessage::LevelCleared => {
@@ -1044,13 +1079,14 @@ impl GameState for GameStateGame {
                         LastEnemyDeathReason::Environment => SCORE_SURVIVED_ALL,
                         LastEnemyDeathReason::Player => SCORE_KILL_ALL,
                     };
+                    resources.play_sound(SoundIdentifier::WaveCleared, sound_mixer);
                     self.player_score += score_add;
                 }
             }
         }
 
         for enemy in self.enemies.iter_mut() {
-            enemy.update(dt, &mut self.bullets, &resources, &self.player.pos, &mut self.wave_manager);
+            enemy.update(dt, &mut self.bullets, &resources, &self.player.pos, &mut self.wave_manager, sound_mixer);
             enemy.draw();
         }
 
@@ -1152,7 +1188,7 @@ impl GameState for GameStateGame {
 
         draw_lives(&self.player_lives, resources.life, &resources.ground_bg, &self.wave_manager);
 
-        self.player.update(dt, &mut self.bullets, &resources);
+        self.player.update(dt, &mut self.bullets, &resources, sound_mixer);
         self.player.draw();
         None
     }
@@ -1200,7 +1236,7 @@ impl GameStateMenu {
 }
 
 impl GameState for GameStateMenu {
-    fn update(&mut self, _dt: f32, _resources: &Resources) -> Option<GameStateCommand> {
+    fn update(&mut self, _dt: f32, _resources: &Resources, sound_mixer: &mut SoundMixer) -> Option<GameStateCommand> {
         if is_key_down(KEY_START_GAME) {
             return Some(GameStateCommand::ChangeState(GameStateIdentifier::Game, None));
         }
@@ -1274,10 +1310,11 @@ pub struct GameManager {
     states: HashMap::<GameStateIdentifier, Box::<dyn GameState>>,
     current_state_identifier: GameStateIdentifier,
     resources: Resources,
+    sound_mixer: SoundMixer,
 }
 
 impl GameManager {
-    pub fn new(all_states: Vec::<(GameStateIdentifier, Box::<dyn GameState>)>, resources: Resources) -> Self {
+    pub fn new(all_states: Vec::<(GameStateIdentifier, Box::<dyn GameState>)>, resources: Resources, sound_mixer: SoundMixer) -> Self {
         let mut states = HashMap::new(); 
         for state in all_states.into_iter() {
             states.insert(state.0, state.1);
@@ -1286,7 +1323,12 @@ impl GameManager {
             states,
             current_state_identifier: GameStateIdentifier::Menu,
             resources,
+            sound_mixer,
         }
+    }
+
+    pub fn frame_sounds(&mut self) {
+        self.sound_mixer.frame();
     }
 
     pub fn update(&mut self, dt: f32) {
@@ -1295,7 +1337,7 @@ impl GameManager {
         // because we would have 2 state references, the current one and the one we change to.
         // (we can't set state if we are holding a reference to the current state)
         let state_command_optional = if let Some(game_state) = self.states.get_mut(&self.current_state_identifier) {
-            game_state.update(dt, &self.resources)
+            game_state.update(dt, &self.resources, &mut self.sound_mixer)
         } else {
             None
         };
@@ -1324,6 +1366,15 @@ impl GameManager {
         }
     }
 }
+
+const SOUND_BYTES_SPAWN: &'static [u8] = include_bytes!("../resources/sounds/spawn.wav");
+const SOUND_BYTES_ENEMY_SHOOT: &'static [u8] = include_bytes!("../resources/sounds/enemy_shoot.wav");
+const SOUND_BYTES_PLAYER_SHOOT: &'static [u8] = include_bytes!("../resources/sounds/player_shoot.wav");
+
+const SOUND_BYTES_PLAYER_OUCH: &'static [u8] = include_bytes!("../resources/sounds/player_ouch.wav");
+const SOUND_BYTES_SPAWN_MINI: &'static [u8] = include_bytes!("../resources/sounds/spawn_mini.wav");
+const SOUND_BYTES_WARNING: &'static [u8] = include_bytes!("../resources/sounds/warning.wav");
+const SOUND_BYTES_WAVE_CLEARED: &'static [u8] = include_bytes!("../resources/sounds/wave_cleared.wav");
 
 #[macroquad::main(window_conf)]
 async fn main() {
@@ -1360,12 +1411,24 @@ async fn main() {
         resources.load_texture("resources/demon_normal_purple_2.png", Purple, Normal).await;
         resources.load_texture("resources/demon_normal_red_1.png", Red, Normal).await;
     }
+    {
+        use SoundIdentifier::*;
+        resources.load_sound(SOUND_BYTES_ENEMY_SHOOT, EnemyShoot);
+        resources.load_sound(SOUND_BYTES_PLAYER_SHOOT, PlayerShoot);
+        resources.load_sound(SOUND_BYTES_SPAWN, Spawn);
+        resources.load_sound(SOUND_BYTES_PLAYER_OUCH, PlayerOuch);
+        resources.load_sound(SOUND_BYTES_SPAWN_MINI, SpawnMini);
+        resources.load_sound(SOUND_BYTES_WARNING, Warning);
+        resources.load_sound(SOUND_BYTES_WAVE_CLEARED, WaveCleared);
+    }
+
+    let mixer = SoundMixer::new();
 
     let game_states: Vec::<(GameStateIdentifier, Box::<dyn GameState>)> = vec![
         (GameStateIdentifier::Menu, Box::new(GameStateMenu::new())),
         (GameStateIdentifier::Game, Box::new(GameStateGame::new(&resources))),
     ];
-    let mut game_manager = GameManager::new(game_states, resources);
+    let mut game_manager = GameManager::new(game_states, resources, mixer);
 
     loop {
         let dt = get_frame_time();
@@ -1411,6 +1474,8 @@ async fn main() {
         );
 
         game_manager.draw_unscaled();
+
+        game_manager.frame_sounds();
 
         next_frame().await
     }

@@ -11,3 +11,6 @@ macroquad = "0.3.0-alpha.15"
 
 # linear interpolation library
 lininterp = "0.1.3"
+
+# AUDIO
+quad-snd = "0.1.0-alpha.1"

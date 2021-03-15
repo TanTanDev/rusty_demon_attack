@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use std::collections::HashMap;
 
 //const GAME_SIZE_X: i32 = 160;
 const GAME_SIZE_X: i32 = 240;
@@ -907,20 +908,34 @@ pub fn draw_lives(player_lives: &i32, texture_life: Texture2D, texture_ground_bg
 }
 
 pub enum GameStateCommand {
-    ChangeState(GameState),
+    ChangeState(GameStateIdentifier),
 }
 
-pub enum GameState {
-    Menu(GameStateMenu),
-    Game(GameStateGame),
+#[derive(PartialEq, Eq, Hash)]
+pub enum GameStateIdentifier {
+    Menu,
+    Game,
 }
+
+pub trait GameState {
+    fn update(&mut self, dt: f32) -> Option<GameStateCommand>;
+    fn draw(&self);
+    fn on_enter(&mut self);
+}
+
 
 pub struct GameStateGame {
 }
 
-impl GameStateGame {
+impl GameState for GameStateGame {
     fn update(&mut self, dt: f32) -> Option<GameStateCommand> {
         None
+    }
+
+    fn draw(&self) {
+    }
+
+    fn on_enter(&mut self) {
     }
 }
 
@@ -928,27 +943,60 @@ pub struct GameStateMenu {
 
 }
 
-impl GameStateMenu {
+impl GameState for GameStateMenu {
     fn update(&mut self, dt: f32) -> Option<GameStateCommand> {
         None
+    }
+
+    fn draw(&self) {
+    }
+
+    fn on_enter(&mut self) {
     }
 }
 
 pub struct GameManager {
-    state: GameState,
+    states: HashMap::<GameStateIdentifier, Box::<dyn GameState>>,
+    current_state_identifier: GameStateIdentifier,
 }
 
 impl GameManager {
+    pub fn new(all_states: Vec::<(GameStateIdentifier, Box::<dyn GameState>)>) -> Self {
+        let mut states = HashMap::new(); 
+        for state in all_states.into_iter() {
+            states.insert(state.0, state.1);
+        }
+        GameManager {
+            states,
+            current_state_identifier: GameStateIdentifier::Menu
+        }
+    }
+
     pub fn update(&mut self, dt: f32) {
-        let state_command_optional = match &mut self.state {
-            GameState::Menu(menu_state) => menu_state.update(dt),
-            GameState::Game(game_state) => game_state.update(dt),
+        // since we access the state through identifier instead of reference 
+        // we try to get the state, then update it. If we ChangeState, then we can't call on_enter IN this scope,
+        // because we would have 2 state references, the current one and the one we change to.
+        // (we can't set state if we are holding a reference to the current state)
+        let state_command_optional = if let Some(game_state) = self.states.get_mut(&self.current_state_identifier) {
+            game_state.update(dt)
+        } else {
+            None
         };
 
         if let Some(state_command) = state_command_optional {
             match state_command {
-                GameStateCommand::ChangeState(state) => self.state = state,
+                GameStateCommand::ChangeState(next_state) => {
+                    self.current_state_identifier = next_state;
+                    if let Some(game_state) = self.states.get_mut(&self.current_state_identifier) {
+                        game_state.on_enter();
+                    }
+                },
             }
+        }
+    }
+    pub fn draw(&self) {
+        if let Some(game_state) = self.states.get(&self.current_state_identifier) {
+            game_state.draw();
         }
     }
 }
@@ -1000,6 +1048,12 @@ async fn main() {
         last_enemy_death_reason: LastEnemyDeathReason::Environment,
     };
 
+    let game_states: Vec::<(GameStateIdentifier, Box::<dyn GameState>)> = vec![
+        (GameStateIdentifier::Menu, Box::new(GameStateMenu{})),
+        (GameStateIdentifier::Game, Box::new(GameStateGame{})),
+    ];
+    let mut game_manager = GameManager::new(game_states);
+
     loop {
         let dt = get_frame_time();
 
@@ -1011,6 +1065,8 @@ async fn main() {
             ..Default::default()
         });
         clear_background(BLACK);
+        game_manager.update(dt);
+        game_manager.draw();
 
         let manager_message_optional = wave_manager.update(dt, &mut enemies, &textures);
         if let Some(manager_message) = manager_message_optional {

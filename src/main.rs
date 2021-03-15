@@ -11,6 +11,12 @@ const KEY_RIGHT: KeyCode = KeyCode::Right;
 const KEY_LEFT: KeyCode = KeyCode::Left;
 const KEY_SHOOT: KeyCode = KeyCode::Space;
 
+const SCORE_NORMAL: i32 = 100;
+const SCORE_MINI: i32 = 20;
+
+const SCORE_KILL_ALL: i32 = 1000;
+const SCORE_SURVIVED_ALL: i32 = 750;
+
 const PLAYER_SPEED: f32 = 80f32;
 const PLAYER_SHOOT_TIME: f32 = 0.8f32;
 const PLAYER_BULLET_SPEED: f32 = 80f32;
@@ -18,7 +24,8 @@ const PLAYER_LIVES_START: i32 = 7i32;
 const PLAYER_LIVES_MAX: i32 = 7i32;
 const PLAYER_TIME_INVISBLE: f32 = 2f32;
 
-const ENEMY_SPEED: f32 = 1.0f32;
+const ENEMY_SPEED: f32 = 50.0f32;
+const ENEMY_SPEED_HOMING: Vec2 = Vec2{x: 60f32, y: 30f32};
 const ENEMY_BULLET_SPEED: f32 = 80f32;
 const ENEMY_SHOOT_TIME: f32 = 2f32;
 // when shooting more than 1 bullet
@@ -120,10 +127,12 @@ impl Bullet {
     }
 }
 
+#[derive(PartialEq)]
 pub enum EnemyState {
     Spawning(EnemyStateSpawning),
     Normal(EnemyStateNormal),
     Shooting(EnemyStateShooting),
+    Homing(EnemyStateHoming),
 }
 
 #[derive(Clone, Copy)]
@@ -137,9 +146,26 @@ pub enum EnemyCommand {
     ChangeState(EnemyState),
 }
 
+
+#[derive(Clone, Copy)]
 pub enum EnemyType {
     Normal,
     Mini,
+}
+
+#[derive(Clone, Copy)]
+pub enum EnemyColor {
+    Purple,
+    Green,
+    Red,
+}
+
+impl EnemyColor {
+    pub fn random() -> Self {
+        use EnemyColor::*;
+        let all = [Purple, Green, Red];
+        all[rand::gen_range(0, all.len())]
+    }
 }
 
 pub struct EnemyStateShared {
@@ -150,17 +176,28 @@ pub struct EnemyStateShared {
     death_method: EnemyDeathMethod,
     animation_timer: f32,
     enemy_type: EnemyType,
+    enemy_color: EnemyColor, 
+
+    // used for mini enemies, that home in on player
+    charge_timer_optional: Option<f32>,
 }
 
+#[derive(PartialEq)]
 pub struct EnemyStateNormal {
     shoot_timer: f32,
 }
 
+#[derive(PartialEq)]
+pub struct EnemyStateHoming {
+}
+
+#[derive(PartialEq)]
 pub struct EnemyStateShooting {
     shots_left: i32,
     shoot_timer: f32,
 }
 
+#[derive(PartialEq)]
 pub struct EnemyStateSpawning {
     spawn_timer: f32,
 }
@@ -171,7 +208,11 @@ pub struct Enemy {
 }
 
 impl Enemy {
-    pub fn new(pos: Vec2, texture: Texture2D, health: i32, death_method: EnemyDeathMethod, enemy_type: EnemyType) -> Self {
+    pub fn new(pos: Vec2, texture: Texture2D, health: i32, death_method: EnemyDeathMethod, enemy_type: EnemyType, enemy_color: EnemyColor) -> Self {
+        let charge_timer_optional = match enemy_type{
+            EnemyType::Normal => None,
+            EnemyType::Mini => Some(rand::gen_range(ENEMY_MINI_HOMING_TIME_RANGE.x, ENEMY_MINI_HOMING_TIME_RANGE.y)),
+        };
         Enemy {
             state_shared: EnemyStateShared {
                 pos,
@@ -181,6 +222,8 @@ impl Enemy {
                 death_method,
                 animation_timer: 0f32,
                 enemy_type,
+                charge_timer_optional,
+                enemy_color,
             },
             state: EnemyState::Spawning(EnemyStateSpawning{
                 spawn_timer: 0f32,
@@ -188,11 +231,12 @@ impl Enemy {
         }
     }
 
-    pub fn update(&mut self, dt: f32, bullets: &mut Vec::<Bullet>, textures: &Textures) {
+    pub fn update(&mut self, dt: f32, bullets: &mut Vec::<Bullet>, textures: &Textures, player_pos: &Vec2, game_manager: &mut GameManager) {
         let command_optional = match &mut self.state {
             EnemyState::Spawning(state_data) => Self::update_state_spawning(&mut self.state_shared, dt, state_data),
             EnemyState::Normal(state_data) => Self::update_state_normal(&mut self.state_shared, dt, bullets, textures, state_data),
             EnemyState::Shooting(state_data) => Self::update_state_shooting(&mut self.state_shared, dt, bullets, textures, state_data),
+            EnemyState::Homing(state_data) => Self::update_state_homing(&mut self.state_shared, dt, state_data, player_pos, game_manager),
         };
         match command_optional {
             None => {},
@@ -238,19 +282,27 @@ impl Enemy {
 
         let fraction = state_data.spawn_timer / end_time;
         if fraction >= 1.0f32 {
-            return Some(EnemyCommand::ChangeState(EnemyState::Normal(EnemyStateNormal {shoot_timer: 0f32})));
+            return Some(EnemyCommand::ChangeState(EnemyState::Normal(EnemyStateNormal {shoot_timer: 0f32, })));
         }
         None
     }
 
     fn update_state_normal(state_shared: &mut EnemyStateShared, dt: f32, bullets: &mut Vec::<Bullet>, textures: &Textures, state_data: &mut EnemyStateNormal) -> Option<EnemyCommand> {
-        state_shared.pos.x += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED;
-        state_shared.pos.y += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED;
+        state_shared.pos.x += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED * dt;
+        state_shared.pos.y += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED * dt;
         Self::clamp_in_view(&mut state_shared.pos);
         state_shared.collision_rect.x = state_shared.pos.x - state_shared.texture.width()*0.5f32;
         state_shared.collision_rect.y = state_shared.pos.y;
 
         state_data.shoot_timer += dt;
+        // update timer for charging in on player
+        if let Some(charge_timer) = &mut state_shared.charge_timer_optional {
+            *charge_timer -= dt;
+            if *charge_timer <= 0f32 {
+                return Some(EnemyCommand::ChangeState(EnemyState::Homing(EnemyStateHoming{})));
+            }
+        }
+
         state_shared.animation_timer += dt;
         if state_shared.animation_timer > ENEMY_ANIM_TIME_FLAP*4f32 {
             state_shared.animation_timer -= ENEMY_ANIM_TIME_FLAP*4f32;
@@ -263,8 +315,8 @@ impl Enemy {
     }
 
     fn update_state_shooting(state_shared: &mut EnemyStateShared, dt: f32, bullets: &mut Vec::<Bullet>, textures: &Textures, state_data: &mut EnemyStateShooting) -> Option<EnemyCommand> {
-        state_shared.pos.x += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED * 0.5f32;
-        state_shared.pos.y += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED * 0.5f32;
+        state_shared.pos.x += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED * 0.5f32 * dt;
+        state_shared.pos.y += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED * 0.5f32 * dt;
         Self::clamp_in_view(&mut state_shared.pos);
         state_data.shoot_timer -= dt;
         // SPAWN SHOT
@@ -297,8 +349,35 @@ impl Enemy {
 
         // done shooting
         if state_data.shots_left <= 0 {
-            return Some(EnemyCommand::ChangeState(EnemyState::Normal(EnemyStateNormal{ shoot_timer: 0f32,})));
+            return Some(EnemyCommand::ChangeState(EnemyState::Normal(EnemyStateNormal{ shoot_timer: 0f32, })));
         }
+        None
+    }
+
+    fn update_state_homing(state_shared: &mut EnemyStateShared, dt: f32, state_data: &mut EnemyStateHoming, player_pos: &Vec2, game_manager: &mut GameManager) -> Option<EnemyCommand> {
+        state_shared.animation_timer += dt;
+        if state_shared.animation_timer > ENEMY_ANIM_TIME_FLAP*4f32 {
+            state_shared.animation_timer -= ENEMY_ANIM_TIME_FLAP*4f32;
+        }
+        // MOVE TOWARDS PLAYER
+        let player_dx = player_pos.x - state_shared.pos.x;
+        let dx = if player_dx > 0f32 {1f32} else {-1f32};
+        let sway_speed = 20f32;
+        let sway = (get_time() as f32 * sway_speed).sin(); 
+        // remap from -1 -> 1 TO 0 -> 1
+        let sway = (sway + 1f32)*0.5f32; 
+
+        let vel = vec2(dx * ENEMY_SPEED_HOMING.x*sway, ENEMY_SPEED_HOMING.y);
+        state_shared.pos += vel * dt;
+        state_shared.collision_rect.x = state_shared.pos.x - state_shared.texture.width()*0.5f32;
+        state_shared.collision_rect.y = state_shared.pos.y;
+
+        // kill monsters below screen
+        if state_shared.pos.y > GAME_SIZE_Y as f32 {
+            state_shared.health = 0;
+            game_manager.last_enemy_death_reason = LastEnemyDeathReason::Environment;
+        }
+        // collision against player checks happends in main
         None
     }
 
@@ -449,6 +528,7 @@ impl Enemy {
             EnemyState::Normal(_state_data) => self.draw_state_normal(),
             // enemy doesn't look different when shooting
             EnemyState::Shooting(_state_data) => self.draw_state_normal(),
+            EnemyState::Homing(_state_data) => self.draw_state_normal(),
         }
     }
 }
@@ -466,7 +546,7 @@ pub enum PlayerCommand {
 }
 
 pub struct Player {
-    pos: Vec2,
+    pub pos: Vec2,
     texture: Texture2D,
     texture_explotion: Texture2D,
     bullet_decoy_texture: Texture2D,
@@ -612,20 +692,68 @@ impl Player {
 }
 
 pub struct Textures {
-    demon_1: Texture2D,
-    demon_2: Texture2D,
-    demon_mini_1: Texture2D,
+    demons_normal_purple: Vec::<Texture2D>,
+    demons_normal_green: Vec::<Texture2D>,
+    demons_normal_red: Vec::<Texture2D>,
+    demons_mini_purple: Vec::<Texture2D>,
+    demons_mini_green: Vec::<Texture2D>,
+    demons_mini_red: Vec::<Texture2D>,
+
     demon_missile: Texture2D,
     player_missile: Texture2D,
 }
 
 impl Textures {
-    pub fn rand_enemy_normal(&self) -> Texture2D {
-        [self.demon_1, self.demon_2][rand::gen_range(0, 2)]
+    pub fn new(demon_missile: Texture2D, player_missile: Texture2D) -> Self {
+        Textures {
+            demons_normal_purple: Vec::<Texture2D>::new(),
+            demons_normal_green: Vec::<Texture2D>::new(),
+            demons_normal_red: Vec::<Texture2D>::new(),
+            demons_mini_purple: Vec::<Texture2D>::new(),
+            demons_mini_green: Vec::<Texture2D>::new(),
+            demons_mini_red: Vec::<Texture2D>::new(),
+            demon_missile,
+            player_missile,
+        }
     }
 
-    pub fn rand_enemy_mini(&self) -> Texture2D {
-        [self.demon_mini_1][rand::gen_range(0, 1)]
+    pub async fn load_texture(&mut self, file_name: &str, enemy_color: EnemyColor, enemy_type: EnemyType) {
+        let texture: Texture2D = load_texture(file_name).await;
+        set_texture_filter(texture, FilterMode::Nearest);
+        let texture_vec = match enemy_type {
+            EnemyType::Normal => {
+                match enemy_color{
+                    EnemyColor::Purple => &mut self.demons_normal_purple,
+                    EnemyColor::Green => &mut self.demons_normal_green,
+                    EnemyColor::Red => &mut self.demons_normal_red,
+                }
+            }
+            EnemyType::Mini => {
+                match enemy_color {
+                    EnemyColor::Purple => &mut self.demons_mini_purple,
+                    EnemyColor::Green => &mut self.demons_mini_green,
+                    EnemyColor::Red => &mut self.demons_mini_red,
+                }
+            }
+        };
+        texture_vec.push(texture);
+    }
+    pub fn rand_enemy_normal(&self, enemy_color: EnemyColor) -> Texture2D {
+        let normal_list = match enemy_color {
+            EnemyColor::Purple => &self.demons_normal_purple, 
+            EnemyColor::Green => &self.demons_normal_green,
+            EnemyColor::Red => &self.demons_normal_red,
+        };
+        normal_list[rand::gen_range(0, normal_list.len())]
+    }
+
+    pub fn rand_enemy_mini(&self, enemy_color: EnemyColor) -> Texture2D {
+        let mini_list = match enemy_color {
+            EnemyColor::Purple => &self.demons_mini_purple, 
+            EnemyColor::Green => &self.demons_mini_green,
+            EnemyColor::Red => &self.demons_mini_red,
+        };
+        mini_list[rand::gen_range(0, mini_list.len())]
     }
 }
 
@@ -638,31 +766,53 @@ pub enum GameState {
     Battle,
 }
 
+// used to internally modify gamestate
 pub enum GameStateCommand {
     ChangeState(GameState)
 }
 
+// used to get information from gamestate
+pub enum GameStateMessage {
+    LevelCleared
+}
+
+// the reason the last enemy died
+#[derive(PartialEq)]
+pub enum LastEnemyDeathReason {
+    Environment,
+    Player,
+}
+
 pub struct GameManager {
     state: GameState,
+    last_enemy_death_reason: LastEnemyDeathReason,
 }
 
 impl GameManager {
-    pub fn update(&mut self, dt: f32, enemies: &mut Vec<Enemy>, textures: &Textures) {
+    pub fn update(&mut self, dt: f32, enemies: &mut Vec<Enemy>, textures: &Textures) -> Option<GameStateMessage> {
         let state_command_optional = match &mut self.state {
             GameState::Spawning(game_state_spawning) => Self::update_state_spawning(game_state_spawning, dt, enemies, textures),
             GameState::Battle =>  Self::update_state_battle(dt, enemies),
         };
 
         if let Some(state_command) = state_command_optional {
-            match state_command{
-                GameStateCommand::ChangeState(target_state) => self.state = target_state,  
+            match state_command {
+                GameStateCommand::ChangeState(target_state) => {
+                    self.state = target_state;  
+
+                    let cleared_screen = variant_eq(&self.state, &GameState::Spawning(GameStateSpawning{spawn_timer:0f32, enemies_left:0,}));
+                    if cleared_screen {
+                        return Some(GameStateMessage::LevelCleared);
+                    }
+                }
             }
         }
+        None
     }
 
     fn update_state_battle(dt: f32, enemies: &mut Vec<Enemy>) -> Option<GameStateCommand> {
         if enemies.len() <= 0 {
-            return Some(GameStateCommand::ChangeState(GameState::Spawning(GameStateSpawning{enemies_left: 5, spawn_timer: 0f32,})));
+            return Some(GameStateCommand::ChangeState(GameState::Spawning(GameStateSpawning{enemies_left: 9, spawn_timer: 0f32,})));
         }
         None
     }
@@ -672,7 +822,7 @@ impl GameManager {
         if game_state_spawning.spawn_timer > ENEMY_SPAWN_TIME { 
             game_state_spawning.enemies_left -= 1;
             game_state_spawning.spawn_timer -= ENEMY_SPAWN_TIME;
-            spawn_enemy(enemies, &textures, SpawnBlueprint::Normal);
+            spawn_enemy(enemies, &textures, SpawnBlueprint::Normal, EnemyColor::random());
         }
         if game_state_spawning.enemies_left <= 0 {
             return Some(GameStateCommand::ChangeState(GameState::Battle));
@@ -687,63 +837,120 @@ pub enum SpawnBlueprint {
 }
 
 // construct an enemy with randomized features based on a blueprint
-pub fn spawn_enemy(enemies: &mut Vec<Enemy>, textures: &Textures, spawn_blueprint: SpawnBlueprint) { 
+pub fn spawn_enemy(enemies: &mut Vec<Enemy>, textures: &Textures, spawn_blueprint: SpawnBlueprint, enemy_color: EnemyColor) { 
     let health = 1;
     let enemy = match spawn_blueprint{
         SpawnBlueprint::Normal => {
             let spawn_offset = vec2(rand::gen_range(-100f32, 100f32), rand::gen_range(-60f32, 10f32));
             let spawn_pos = vec2(GAME_CENTER_X, GAME_CENTER_Y) + spawn_offset;
-            let death_method = if rand::gen_range(0f32, 1f32) > 0.0f32 {
-                //let spawn_amount = rand::gen_range(1, 2+1);
-                let spawn_amount = 2;
+            let death_method = if rand::gen_range(0f32, 1f32) > 0.5f32 {
+                let spawn_amount = rand::gen_range(1, 2+1);
                 EnemyDeathMethod::SpawnChildren(spawn_amount)
             } else {
                 EnemyDeathMethod::None
             };
 
-            Enemy::new(spawn_pos, textures.rand_enemy_normal(), health, death_method, EnemyType::Normal)
+            Enemy::new(spawn_pos, textures.rand_enemy_normal(enemy_color), health, death_method, EnemyType::Normal, enemy_color)
         }
         SpawnBlueprint::Mini(pos) => {
-            Enemy::new(pos, textures.rand_enemy_mini(), health, EnemyDeathMethod::None, EnemyType::Mini)
+            Enemy::new(pos, textures.rand_enemy_mini(enemy_color), health, EnemyDeathMethod::None, EnemyType::Mini, enemy_color)
         }
     };
     enemies.push(enemy);
 }
 
+// used to compare enums without having to match against it's values 
+// example what we avoid: emotion_enum == Emotion::Happy{happines_level: 0f32, visible_on_face: false,}
+// the values needs to be constructed, but comparison is top-level
+fn variant_eq<T>(a: &T, b: &T) -> bool {
+    std::mem::discriminant(a) == std::mem::discriminant(b)
+}
+
+// okay this is pretty hacky...
+// if last kill was from player then a life should've been gained, so animate lives
+pub fn draw_lives(player_lives: &i32, texture_life: Texture2D, texture_ground_bg: &Texture2D, game_manager: &GameManager) {
+    let lives_padding = 2f32;
+    let last_kill_from_player = game_manager.last_enemy_death_reason == LastEnemyDeathReason::Player; 
+    let wave_speed = 20f32;
+    let wave_offset_y = -7f32;
+    let wave_time_offset = 0.7f32;
+
+    match &game_manager.state {
+         GameState::Spawning(_spawning_state) if last_kill_from_player => {
+            for i in 0..*player_lives {
+                let wave = ((get_time() as f32*wave_speed + i as f32*wave_time_offset).sin()+1f32)*0.5f32;
+                draw_texture_ex(
+                    texture_life,
+                    5f32 + i as f32 * (texture_life.width() + lives_padding),
+                    GAME_SIZE_Y as f32 - texture_ground_bg.height() + 3f32 + wave * wave_offset_y,
+                    PINK,
+                    DrawTextureParams {
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+        _ => {
+            for i in 0..*player_lives {
+                draw_texture_ex(
+                    texture_life,
+                    5f32 + i as f32 * (texture_life.width() + lives_padding),
+                    GAME_SIZE_Y as f32 - texture_ground_bg.height() + 3f32,
+                    WHITE,
+                    DrawTextureParams {
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+    }
+}
+
 #[macroquad::main(window_conf)]
 async fn main() {
     let game_render_target = render_target(GAME_SIZE_X as u32, GAME_SIZE_Y as u32);
-    let mut texture_demon_1: Texture2D = load_texture("resources/demon_1.png").await;
-    let mut texture_demon_2: Texture2D = load_texture("resources/demon_2.png").await;
-    let mut texture_demon_small: Texture2D = load_texture("resources/demon_small.png").await;
-    let mut texture_player: Texture2D = load_texture("resources/player.png").await;
-    let mut texture_player_explotion: Texture2D = load_texture("resources/player_explotion.png").await;
-    let mut texture_player_missile: Texture2D = load_texture("resources/player_missile.png").await;
-    let mut texture_demon_missile: Texture2D = load_texture("resources/demon_missile.png").await;
-    let mut texture_ground_bg: Texture2D = load_texture("resources/ground_bg.png").await;
-    let mut texture_life: Texture2D = load_texture("resources/life.png").await;
-    set_texture_filter(game_render_target.texture, FilterMode::Nearest);
-    set_texture_filter(texture_demon_1, FilterMode::Nearest);
-    set_texture_filter(texture_demon_2, FilterMode::Nearest);
-    set_texture_filter(texture_demon_small, FilterMode::Nearest);
-    set_texture_filter(texture_player, FilterMode::Nearest);
-    set_texture_filter(texture_player_explotion, FilterMode::Nearest);
-    set_texture_filter(texture_player_missile, FilterMode::Nearest);
-    set_texture_filter(texture_demon_missile, FilterMode::Nearest);
-    set_texture_filter(texture_ground_bg, FilterMode::Nearest);
-    set_texture_filter(texture_life, FilterMode::Nearest);
+    let texture_player: Texture2D = load_texture("resources/player.png").await;
+    let texture_player_explotion: Texture2D = load_texture("resources/player_explotion.png").await;
+    let texture_player_missile: Texture2D = load_texture("resources/player_missile.png").await;
+    let texture_demon_missile: Texture2D = load_texture("resources/demon_missile.png").await;
+    let texture_ground_bg: Texture2D = load_texture("resources/ground_bg.png").await;
+    let texture_life: Texture2D = load_texture("resources/life.png").await;
+
+    // set all textures filter mode to nearest
+    for texture in [texture_player, texture_player_explotion
+        , texture_player_missile, texture_demon_missile
+        , texture_ground_bg, texture_life, game_render_target.texture].iter()
+    {
+        set_texture_filter(*texture, FilterMode::Nearest);
+    }
 
     let font = load_ttf_font("resources/Kenney Pixel Square.ttf").await;
     let mut player_score: i32 = 0;
     let mut player_lives: i32 = PLAYER_LIVES_START;
 
-    let textures = Textures {
-        demon_1: texture_demon_1,
-        demon_2: texture_demon_2,
-        demon_mini_1: texture_demon_small,
-        demon_missile: texture_demon_missile,
-        player_missile: texture_player_missile,
-    };
+    let mut textures = Textures::new(texture_demon_missile, texture_player_missile);
+    {
+        use EnemyColor::{Green, Purple, Red};
+        use EnemyType::{Mini, Normal};
+        textures.load_texture("resources/demon_mini_green_1.png", Green, Mini).await;
+        textures.load_texture("resources/demon_mini_red_1.png", Red, Mini).await;
+        textures.load_texture("resources/demon_mini_purple_1.png", Purple, Mini).await;
+        textures.load_texture("resources/demon_normal_green_1.png", Green, Normal).await;
+        textures.load_texture("resources/demon_normal_green_2.png", Green, Normal).await;
+        textures.load_texture("resources/demon_normal_purple_1.png", Purple, Normal).await;
+        textures.load_texture("resources/demon_normal_purple_2.png", Purple, Normal).await;
+        textures.load_texture("resources/demon_normal_red_1.png", Red, Normal).await;
+    }
+    //let textures = Textures {
+    //    demons_normal_purple: vec![texture_demon_1, texture_demon_2],
+    //    demons_normal_green: vec![texture_demon_green_2],
+    //    demons_normal_red: vec![texture_demon_red_1],
+    //    demons_mini_green: vec![texture_demon_small_green_2],
+    //    demons_mini_purple: vec![texture_demon_small],
+    //    demons_mini_red: vec![texture_demon_mini_red_1],
+    //    demon_missile: texture_demon_missile,
+    //    player_missile: texture_player_missile,
+    //};
 
     let mut bullets = Vec::<Bullet>::new();
     let mut enemies = Vec::<Enemy>::new();
@@ -752,7 +959,8 @@ async fn main() {
     let mut player = Player::new(vec2(GAME_CENTER_X, player_spawn_y), texture_player, texture_player_missile, texture_player_explotion);
 
     let mut game_manager = GameManager {
-        state: GameState::Spawning(GameStateSpawning{spawn_timer: 0f32, enemies_left: 7, }),
+        state: GameState::Spawning(GameStateSpawning{spawn_timer: 0f32, enemies_left: 15, }),
+        last_enemy_death_reason: LastEnemyDeathReason::Environment,
     };
 
     loop {
@@ -767,10 +975,24 @@ async fn main() {
             ..Default::default()
         });
         clear_background(BLACK);
-        game_manager.update(dt, &mut enemies, &textures);
+
+        let manager_message_optional = game_manager.update(dt, &mut enemies, &textures);
+        if let Some(manager_message) = manager_message_optional {
+            match manager_message {
+                GameStateMessage::LevelCleared => {
+                    player_lives +=1;
+                    player_lives = player_lives.min(PLAYER_LIVES_MAX);
+                    let score_add = match game_manager.last_enemy_death_reason {
+                        LastEnemyDeathReason::Environment => SCORE_SURVIVED_ALL,
+                        LastEnemyDeathReason::Player => SCORE_KILL_ALL,
+                    };
+                    player_score += score_add;
+                }
+            }
+        }
 
         for enemy in enemies.iter_mut() {
-            enemy.update(dt, &mut bullets, &textures);
+            enemy.update(dt, &mut bullets, &textures, &player.pos, &mut game_manager);
             enemy.draw();
         }
 
@@ -796,8 +1018,23 @@ async fn main() {
             }
         }
 
-        // 
-        let mut death_methods = Vec::<(Vec2, EnemyDeathMethod)>::with_capacity(4);
+        // homing enemies hurting player
+        for enemy in enemies.iter_mut()
+            // filter enemies containing homing state, variant_eq is used so we can disregard homing data
+            .filter(|e| variant_eq(&e.state, &EnemyState::Homing(EnemyStateHoming{})))
+        {
+            if enemy.overlaps(&player.collision_rect) {
+                let player_invisible = variant_eq(&player.state, &PlayerState::Invisible(0f32));
+                if !player_invisible {
+                    player_lives -= 1;
+                    player.process_command_optional(Some(PlayerCommand::ChangeState(PlayerState::Invisible(PLAYER_TIME_INVISBLE))));
+                    enemy.state_shared.health = 0;
+                }
+            }
+        }
+
+        // todo explain
+        let mut death_methods = Vec::<(Vec2, EnemyDeathMethod, EnemyType, EnemyColor)>::with_capacity(4);
 
         // bullets hurting enemies
         for (i, bullet) in bullets.iter_mut()
@@ -807,9 +1044,10 @@ async fn main() {
             for (i, enemy) in enemies.iter_mut().enumerate() {
                 if enemy.overlaps(&bullet.collision_rect) && !bullet.is_kill {
                     enemy.state_shared.health -= 1;
+                    game_manager.last_enemy_death_reason = LastEnemyDeathReason::Player;
                     // death
                     if enemy.state_shared.health <= 0 {
-                        death_methods.push((enemy.state_shared.pos, enemy.state_shared.death_method));
+                        death_methods.push((enemy.state_shared.pos, enemy.state_shared.death_method, enemy.state_shared.enemy_type, enemy.state_shared.enemy_color));
                     }
                     // can only hurt one enemy, flag for deletion
                     bullet.is_kill = true;
@@ -817,15 +1055,21 @@ async fn main() {
             }
         }
 
-        for (pos, death_method) in death_methods.iter() {
+        for (pos, death_method, enemy_type, enemy_color) in death_methods.iter() {
+            let score_add = match enemy_type {
+                EnemyType::Normal => SCORE_NORMAL, 
+                EnemyType::Mini => SCORE_MINI,
+            };
+            player_score += score_add;
             match death_method {
-                EnemyDeathMethod::None => {},
+                EnemyDeathMethod::None => {
+                },
                 EnemyDeathMethod::SpawnChildren(amount) => {
                     let spawn_width = 20f32;
                     let step = 1./(*amount as f32);
                     for i in 0..*amount {
                         let spawn_pos = *pos + vec2(step * spawn_width * i as f32, 0f32);
-                        spawn_enemy(&mut enemies, &textures, SpawnBlueprint::Mini(spawn_pos));
+                        spawn_enemy(&mut enemies, &textures, SpawnBlueprint::Mini(spawn_pos), *enemy_color);
                     }
                 },
             }
@@ -848,21 +1092,7 @@ async fn main() {
             },
         );
 
-        // draw lives
-        let lives_padding = 2f32;
-        for i in 0..player_lives {
-            draw_texture_ex(
-                texture_life,
-                5f32 + i as f32 * (texture_life.width() + lives_padding),
-                GAME_SIZE_Y as f32 - texture_ground_bg.height() + 3f32,
-                WHITE,
-                DrawTextureParams {
-                    //dest_size: Some(vec2(screen_width(), screen_height())),
-                    //dest_size: Some(Vec2::new(GAME_SIZE_X as f32,  texture_ground_bg.height())),
-                    ..Default::default()
-                },
-            );
-        }
+        draw_lives(&player_lives, texture_life, &texture_ground_bg, &game_manager);
 
         player.update(dt, &mut bullets, &textures);
         player.draw();
@@ -896,7 +1126,7 @@ async fn main() {
                 ..Default::default()
             },
         );
-        player_score += 1; 
+
         let score_text = format!("{}", player_score); 
         let font_size = (aspect_diff * 10f32) as u16;
         let mut text_x = width_padding + scaled_game_size_w * 0.5f32;

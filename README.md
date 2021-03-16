@@ -1,5 +1,6 @@
 # rusty_demon_attack
 A game inspired by the classic atari game: demon attack
+
 ![](about/game_preview.gif)
 
 Written using Rust and a game framework called macroquad: https://github.com/not-fl3/macroquad

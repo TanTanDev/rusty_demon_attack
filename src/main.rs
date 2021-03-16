@@ -357,7 +357,7 @@ impl Enemy {
                 let spawn_offset = vec2(0f32, -3f32);
                 bullets.push(Bullet::new(state_shared.pos + spawn_offset, BulletHurtType::Player, &resources));
             }
-            resources.play_sound(SoundIdentifier::EnemyShoot, sound_mixer);
+            resources.play_sound(SoundIdentifier::EnemyShoot, sound_mixer, Volume(1.0f32));
 
             // for fun move enemy up when shooting
             state_shared.pos.y -= 2f32;
@@ -382,7 +382,7 @@ impl Enemy {
         state_shared.animation_timer += dt;
         if state_shared.animation_timer > ENEMY_ANIM_TIME_FLAP*4f32 {
             state_shared.animation_timer -= ENEMY_ANIM_TIME_FLAP*4f32;
-            resources.play_sound(SoundIdentifier::Warning, sound_mixer);
+            resources.play_sound(SoundIdentifier::Warning, sound_mixer, Volume(1.0f32));
         }
         // MOVE TOWARDS PLAYER
         let player_dx = player_pos.x - state_shared.pos.x;
@@ -623,7 +623,7 @@ impl Player {
                     if self.shoot_timer >= PLAYER_SHOOT_TIME {
                         let spawn_offset = vec2(3f32, -4f32);
                         bullets.push(Bullet::new(self.pos + spawn_offset, BulletHurtType::Enemy, &resources));
-                        resources.play_sound(SoundIdentifier::PlayerShoot, sound_mixer);
+                        resources.play_sound(SoundIdentifier::PlayerShoot, sound_mixer, Volume(1.0f32));
                         self.shoot_timer = 0f32;
                     }
                 }
@@ -784,9 +784,9 @@ impl Resources {
         self.sounds.insert(identifier, sound);
     }
 
-    pub fn play_sound(&self, identifier: SoundIdentifier, mixer: &mut SoundMixer) {
+    pub fn play_sound(&self, identifier: SoundIdentifier, mixer: &mut SoundMixer, volume: Volume) {
         if let Some(sound) = self.sounds.get(&identifier) {
-            mixer.play_ext(sound.clone(), Volume(1f32));
+            mixer.play_ext(sound.clone(), volume);
         }
     }
 
@@ -921,7 +921,7 @@ impl WaveManager {
             game_state_spawning.enemies_left -= 1;
             game_state_spawning.spawn_timer -= ENEMY_SPAWN_TIME;
             spawn_enemy(enemies, &resources, SpawnBlueprint::Normal, EnemyColor::random());
-            resources.play_sound(SoundIdentifier::Spawn, sound_mixer);
+            resources.play_sound(SoundIdentifier::Spawn, sound_mixer, Volume(0.4f32));
         }
         if game_state_spawning.enemies_left <= 0 {
             return Some(WaveManagerCommand::ChangeState(WaveManagerState::Battle));
@@ -1079,7 +1079,7 @@ impl GameState for GameStateGame {
                         LastEnemyDeathReason::Environment => SCORE_SURVIVED_ALL,
                         LastEnemyDeathReason::Player => SCORE_KILL_ALL,
                     };
-                    resources.play_sound(SoundIdentifier::WaveCleared, sound_mixer);
+                    resources.play_sound(SoundIdentifier::WaveCleared, sound_mixer, Volume(0.6f32));
                     self.player_score += score_add;
                 }
             }
@@ -1102,6 +1102,7 @@ impl GameState for GameStateGame {
                     continue;
                 }
                 self.player_lives -= 1;
+                resources.play_sound(SoundIdentifier::PlayerOuch, sound_mixer, Volume(1.0f32));
                 // CHANGE PLAYER STATE
                 self.player.process_command_optional(Some(PlayerCommand::ChangeState(PlayerState::Invisible(PLAYER_TIME_INVISBLE))));
                 if self.player_lives <= 0 {
@@ -1159,6 +1160,7 @@ impl GameState for GameStateGame {
                 EnemyDeathMethod::None => {
                 },
                 EnemyDeathMethod::SpawnChildren(amount) => {
+                    resources.play_sound(SoundIdentifier::SpawnMini, sound_mixer, Volume(1.0f32));
                     let spawn_width = 20f32;
                     let step = 1./(*amount as f32);
                     for i in 0..*amount {
@@ -1237,7 +1239,7 @@ impl GameStateMenu {
 
 impl GameState for GameStateMenu {
     fn update(&mut self, _dt: f32, _resources: &Resources, sound_mixer: &mut SoundMixer) -> Option<GameStateCommand> {
-        if is_key_down(KEY_START_GAME) {
+        if is_key_pressed(KEY_START_GAME) {
             return Some(GameStateCommand::ChangeState(GameStateIdentifier::Game, None));
         }
         None

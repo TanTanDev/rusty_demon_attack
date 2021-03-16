@@ -728,6 +728,7 @@ impl Player {
 #[derive(PartialEq, Eq, Hash)]
 pub enum SoundIdentifier {
     EnemyShoot,
+    EnemyOuch,
     PlayerOuch,
     PlayerShoot,
     SpawnMini,
@@ -1122,6 +1123,7 @@ impl GameState for GameStateGame {
                 let player_invisible = variant_eq(&self.player.state, &PlayerState::Invisible(0f32));
                 if !player_invisible {
                     self.player_lives -= 1;
+                    resources.play_sound(SoundIdentifier::PlayerOuch, sound_mixer, Volume(1.0f32));
                     self.player.process_command_optional(Some(PlayerCommand::ChangeState(PlayerState::Invisible(PLAYER_TIME_INVISBLE))));
                     enemy.state_shared.health = 0;
                 }
@@ -1142,6 +1144,7 @@ impl GameState for GameStateGame {
                     self.wave_manager.last_enemy_death_reason = LastEnemyDeathReason::Player;
                     // death
                     if enemy.state_shared.health <= 0 {
+                        resources.play_sound(SoundIdentifier::EnemyOuch, sound_mixer, Volume(1.0f32));
                         death_methods.push((enemy.state_shared.pos, enemy.state_shared.death_method, enemy.state_shared.enemy_type, enemy.state_shared.enemy_color));
                     }
                     // can only hurt one enemy, flag for deletion
@@ -1374,6 +1377,7 @@ const SOUND_BYTES_ENEMY_SHOOT: &'static [u8] = include_bytes!("../resources/soun
 const SOUND_BYTES_PLAYER_SHOOT: &'static [u8] = include_bytes!("../resources/sounds/player_shoot.wav");
 
 const SOUND_BYTES_PLAYER_OUCH: &'static [u8] = include_bytes!("../resources/sounds/player_ouch.wav");
+const SOUND_BYTES_ENEMY_OUCH: &'static [u8] = include_bytes!("../resources/sounds/enemy_ouch.wav");
 const SOUND_BYTES_SPAWN_MINI: &'static [u8] = include_bytes!("../resources/sounds/spawn_mini.wav");
 const SOUND_BYTES_WARNING: &'static [u8] = include_bytes!("../resources/sounds/warning.wav");
 const SOUND_BYTES_WAVE_CLEARED: &'static [u8] = include_bytes!("../resources/sounds/wave_cleared.wav");
@@ -1419,6 +1423,7 @@ async fn main() {
         resources.load_sound(SOUND_BYTES_PLAYER_SHOOT, PlayerShoot);
         resources.load_sound(SOUND_BYTES_SPAWN, Spawn);
         resources.load_sound(SOUND_BYTES_PLAYER_OUCH, PlayerOuch);
+        resources.load_sound(SOUND_BYTES_ENEMY_OUCH, EnemyOuch);
         resources.load_sound(SOUND_BYTES_SPAWN_MINI, SpawnMini);
         resources.load_sound(SOUND_BYTES_WARNING, Warning);
         resources.load_sound(SOUND_BYTES_WAVE_CLEARED, WaveCleared);

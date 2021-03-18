@@ -8,6 +8,8 @@ https://tantandev.itch.io/rusty-demons-attack
 
 Written using Rust and a game framework called macroquad: https://github.com/not-fl3/macroquad
 
+I documented the creation of this game on my Youtube channel: https://youtu.be/Ymq35SIv9Gg
+
 # Building to WebAssembly
 There is a script in utils/wasm/build.sh.
 ```bash

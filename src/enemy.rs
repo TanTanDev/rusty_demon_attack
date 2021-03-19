@@ -5,7 +5,7 @@ use crate::{
     bullet::{Bullet, BulletHurtType},
     constants::*,
     resources::{Resources, SoundIdentifier},
-    LastEnemyDeathReason, WaveManager,
+    wave::{LastEnemyDeathReason, WaveManager},
 };
 
 #[derive(PartialEq)]

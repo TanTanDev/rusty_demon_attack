@@ -6,7 +6,7 @@ use quad_snd::{
 };
 use std::collections::HashMap;
 
-use crate::{EnemyColor, EnemyType};
+use crate::enemy::{EnemyColor, EnemyType};
 
 #[derive(PartialEq, Eq, Hash)]
 pub enum SoundIdentifier {

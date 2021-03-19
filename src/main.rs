@@ -1617,9 +1617,7 @@ const SOUND_BYTES_WARNING: &'static [u8] = include_bytes!("../resources/sounds/w
 const SOUND_BYTES_WAVE_CLEARED: &'static [u8] =
     include_bytes!("../resources/sounds/wave_cleared.wav");
 
-#[macroquad::main(window_conf)]
-async fn main() {
-    let game_render_target = render_target(GAME_SIZE_X as u32, GAME_SIZE_Y as u32);
+async fn load_resources(game_render_target: RenderTarget) -> Resources {
     let texture_player: Texture2D = load_texture("resources/player.png").await;
     let texture_player_explotion: Texture2D = load_texture("resources/player_explotion.png").await;
     let texture_player_missile: Texture2D = load_texture("resources/player_missile.png").await;
@@ -1692,7 +1690,13 @@ async fn main() {
         resources.load_sound(SOUND_BYTES_WARNING, Warning);
         resources.load_sound(SOUND_BYTES_WAVE_CLEARED, WaveCleared);
     }
+    resources
+}
 
+#[macroquad::main(window_conf)]
+async fn main() {
+    let game_render_target = render_target(GAME_SIZE_X as u32, GAME_SIZE_Y as u32);
+    let resources = load_resources(game_render_target).await;
     let mixer = SoundMixer::new();
 
     let game_states: Vec<(GameStateIdentifier, Box<dyn GameState>)> = vec![

@@ -1,3 +1,4 @@
+use constants::*;
 use macroquad::prelude::*;
 use std::collections::HashMap;
 
@@ -7,57 +8,7 @@ use quad_snd::{
     mixer::{PlaybackStyle, SoundMixer},
 };
 
-//const GAME_SIZE_X: i32 = 160;
-const GAME_SIZE_X: i32 = 240;
-const GAME_SIZE_Y: i32 = 130;
-const GAME_CENTER_X: f32 = GAME_SIZE_X as f32 * 0.5f32;
-const GAME_CENTER_Y: f32 = GAME_SIZE_Y as f32 * 0.5f32;
-const _ASPECT_RATIO: f32 = GAME_SIZE_X as f32 / GAME_SIZE_Y as f32;
-
-const KEY_RIGHT: KeyCode = KeyCode::Right;
-const KEY_LEFT: KeyCode = KeyCode::Left;
-const KEY_SHOOT: KeyCode = KeyCode::Space;
-const KEY_START_GAME: KeyCode = KeyCode::Space;
-
-const SCORE_NORMAL: i32 = 100;
-const SCORE_MINI: i32 = 20;
-
-const SCORE_KILL_ALL: i32 = 1000;
-const SCORE_SURVIVED_ALL: i32 = 750;
-
-const PLAYER_SPEED: f32 = 90f32;
-const PLAYER_SHOOT_TIME: f32 = 0.8f32;
-const PLAYER_BULLET_SPEED: f32 = 80f32;
-const PLAYER_LIVES_START: i32 = 3i32;
-const PLAYER_LIVES_MAX: i32 = 7i32;
-const PLAYER_TIME_INVISBLE: f32 = 2f32;
-
-const ENEMY_SPEED: f32 = 50.0f32;
-const ENEMY_ANGLE_SPEED_RANGE: Vec2 = Vec2 { x: 0.2f32, y: 3f32 };
-
-const ENEMY_SPEED_HOMING: Vec2 = Vec2 { x: 60f32, y: 30f32 };
-const ENEMY_BULLET_SPEED: f32 = 80f32;
-const ENEMY_SHOOT_TIME: f32 = 2f32;
-// when shooting more than 1 bullet
-const ENEMY_SHOOT_BURST_TIME: f32 = 0.2f32;
-const ENEMY_MAX_BURST_COUNT: i32 = 5;
-const ENEMY_ANIM_TIME_SPAWN: f32 = 0.7f32;
-const ENEMY_MINI_ANIM_TIME_SPAWN: f32 = 0.3f32;
-const ENEMY_ANIM_TIME_FLAP: f32 = 0.12f32;
-const ENEMY_ANIM_SPAWN_SCALE: f32 = 4.0f32;
-// how far away the spawn animation starts
-const ENEMY_ANIM_DISTANCE: f32 = 140f32;
-// The min to max time until a mini will start homing
-const ENEMY_MINI_HOMING_TIME_RANGE: Vec2 = Vec2 { x: 4f32, y: 10f32 };
-
-// Enemy Spawn management
-const ENEMY_SPAWN_STARTING_COUNT: i32 = 2;
-const ENEMY_SPAWN_MAX_COUNT: i32 = 9;
-const TIME_UNTIL_MAX_DIFFICULTY: f32 = 70f32;
-// spawn every x sec
-const ENEMY_SPAWN_TIME: f32 = 0.5f32;
-
-const BULLET_ANIM_TIME_SPAWN: f32 = 0.3f32;
+mod constants;
 
 fn window_conf() -> Conf {
     Conf {

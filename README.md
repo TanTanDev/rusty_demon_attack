@@ -11,6 +11,10 @@ Written using Rust and a game framework called macroquad: https://github.com/not
 I documented the creation of this game on my Youtube channel: https://youtu.be/Ymq35SIv9Gg
 
 # Building to WebAssembly
+Add build target for webassembly
+```bash
+rustup target add wasm32-unknown-unknown
+```
 There is a script in utils/wasm/build.sh.
 ```bash
 ./build.sh

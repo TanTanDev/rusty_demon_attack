@@ -79,21 +79,19 @@ impl Player {
         // state specific update
         let player_command_optional = match &mut self.state {
             PlayerState::Normal => {
-                if is_key_down(KEY_SHOOT) {
-                    if self.shoot_timer >= PLAYER_SHOOT_TIME {
-                        let spawn_offset = vec2(3f32, -4f32);
-                        bullets.push(Bullet::new(
-                            self.pos + spawn_offset,
-                            BulletHurtType::Enemy,
-                            &resources,
-                        ));
-                        resources.play_sound(
-                            SoundIdentifier::PlayerShoot,
-                            sound_mixer,
-                            Volume(1.0f32),
-                        );
-                        self.shoot_timer = 0f32;
-                    }
+                if is_key_down(KEY_SHOOT) && self.shoot_timer >= PLAYER_SHOOT_TIME {
+                    let spawn_offset = vec2(3f32, -4f32);
+                    bullets.push(Bullet::new(
+                        self.pos + spawn_offset,
+                        BulletHurtType::Enemy,
+                        resources,
+                    ));
+                    resources.play_sound(
+                        SoundIdentifier::PlayerShoot,
+                        sound_mixer,
+                        Volume(1.0f32),
+                    );
+                    self.shoot_timer = 0f32;
                 }
                 None
             }
@@ -123,10 +121,6 @@ impl Player {
         }
     }
 
-    pub fn overlaps(&self, other_rect: &Rect) -> bool {
-        self.collision_rect.overlaps(other_rect)
-    }
-
     pub fn draw(&self) {
         match self.state {
             PlayerState::Normal => self.draw_state_normal(),
@@ -135,8 +129,6 @@ impl Player {
     }
 
     pub fn draw_state_normal(&self) {
-        let rect = self.collision_rect;
-        //draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 2.0f32, GREEN);
         draw_texture_ex(
             self.texture,
             self.pos.x,
@@ -180,7 +172,7 @@ impl Player {
             self.pos.y - 4f32,
             WHITE,
             DrawTextureParams {
-                rotation: fraction * 3.1415f32 * 2f32,
+                rotation: fraction * std::f32::consts::PI * 2f32,
                 source: Some(Rect::new(
                     self.texture_explotion.width() / anim_frames * frame_index,
                     0f32,

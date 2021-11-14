@@ -133,16 +133,11 @@ impl Enemy {
     ) {
         let command_optional = match &mut self.state {
             EnemyState::Spawning(state_data) => {
-                Self::update_state_spawning(&mut self.state_shared, dt, state_data, sound_mixer)
+                Self::update_state_spawning(&mut self.state_shared, dt, state_data)
             }
-            EnemyState::Normal(state_data) => Self::update_state_normal(
-                &mut self.state_shared,
-                dt,
-                bullets,
-                resources,
-                state_data,
-                sound_mixer,
-            ),
+            EnemyState::Normal(state_data) => {
+                Self::update_state_normal(&mut self.state_shared, dt, state_data)
+            }
             EnemyState::Shooting(state_data) => Self::update_state_shooting(
                 &mut self.state_shared,
                 dt,
@@ -151,10 +146,9 @@ impl Enemy {
                 state_data,
                 sound_mixer,
             ),
-            EnemyState::Homing(state_data) => Self::update_state_homing(
+            EnemyState::Homing(_state_data) => Self::update_state_homing(
                 &mut self.state_shared,
                 dt,
-                state_data,
                 player_pos,
                 game_manager,
                 sound_mixer,
@@ -195,7 +189,6 @@ impl Enemy {
         state_shared: &mut EnemyStateShared,
         dt: f32,
         state_data: &mut EnemyStateSpawning,
-        sound_mixer: &mut SoundMixer,
     ) -> Option<EnemyCommand> {
         state_data.spawn_timer += dt;
         // different enemy types spawn differently
@@ -216,14 +209,11 @@ impl Enemy {
     fn update_state_normal(
         state_shared: &mut EnemyStateShared,
         dt: f32,
-        bullets: &mut Vec<Bullet>,
-        resources: &Resources,
         state_data: &mut EnemyStateNormal,
-        sound_mixer: &mut SoundMixer,
     ) -> Option<EnemyCommand> {
-        let angle_change_speed = 3.1415f32 * state_shared.angle_speed;
+        let angle_change_speed = std::f32::consts::PI * state_shared.angle_speed;
         state_shared.angle +=
-            (get_time() as f32 * angle_change_speed).sin() * 3.1415f32 * 2f32 * dt;
+            (get_time() as f32 * angle_change_speed).sin() * std::f32::consts::PI * 2f32 * dt;
         let dir = vec2(state_shared.angle.sin(), -state_shared.angle.cos());
         state_shared.pos += dir * ENEMY_SPEED * dt;
         // state_shared.pos.x += rand::gen_range(-1f32, 1f32) * ENEMY_SPEED * dt;
@@ -252,7 +242,7 @@ impl Enemy {
             // every time we change state, the enemy will chose a random speed at which it changes its velocity
             state_shared.angle_speed =
                 rand::gen_range(ENEMY_ANGLE_SPEED_RANGE.x, ENEMY_ANGLE_SPEED_RANGE.y);
-            state_shared.angle = rand::gen_range(-3.14f32, 3.14f32);
+            state_shared.angle = rand::gen_range(-std::f32::consts::PI, std::f32::consts::PI);
             return Some(EnemyCommand::ChangeState(EnemyState::Shooting(
                 EnemyStateShooting {
                     shoot_timer: ENEMY_SHOOT_BURST_TIME,
@@ -286,19 +276,19 @@ impl Enemy {
                 bullets.push(Bullet::new(
                     state_shared.pos + spawn_offset,
                     BulletHurtType::Player,
-                    &resources,
+                    resources,
                 ));
                 bullets.push(Bullet::new(
                     state_shared.pos - spawn_offset,
                     BulletHurtType::Player,
-                    &resources,
+                    resources,
                 ));
             } else {
                 let spawn_offset = vec2(0f32, -3f32);
                 bullets.push(Bullet::new(
                     state_shared.pos + spawn_offset,
                     BulletHurtType::Player,
-                    &resources,
+                    resources,
                 ));
             }
             resources.play_sound(SoundIdentifier::EnemyShoot, sound_mixer, Volume(1.0f32));
@@ -327,7 +317,6 @@ impl Enemy {
     fn update_state_homing(
         state_shared: &mut EnemyStateShared,
         dt: f32,
-        state_data: &mut EnemyStateHoming,
         player_pos: &Vec2,
         game_manager: &mut WaveManager,
         sound_mixer: &mut SoundMixer,
@@ -419,7 +408,7 @@ impl Enemy {
             state_shared.pos.y,
             WHITE,
             DrawTextureParams {
-                rotation: fraction * 3.1415f32 * 2f32,
+                rotation: fraction * std::f32::consts::PI * 2f32,
                 dest_size: Some(vec2(scale, scale)),
                 source: Some(Rect::new(
                     state_shared.texture.width() / 4f32 * rand_frame as f32,
@@ -437,7 +426,7 @@ impl Enemy {
             state_shared.pos.y,
             WHITE,
             DrawTextureParams {
-                rotation: fraction * 3.1415f32 * 2f32,
+                rotation: fraction * std::f32::consts::PI * 2f32,
                 flip_x: true,
                 dest_size: Some(vec2(scale, scale)),
                 source: Some(Rect::new(
@@ -460,13 +449,6 @@ impl Enemy {
 
     fn draw_state_normal(&self) {
         let rand_frame = (self.state_shared.animation_timer / ENEMY_ANIM_TIME_FLAP).floor();
-
-        let time = get_time() * 3.1415f64;
-        let rot = (time.sin() + 1f64) * 0.5f64 * 3.141596f64 * 2f64;
-        let rect = self.state_shared.collision_rect;
-        //draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 2.0f32, GREEN);
-
-        //draw_circle(self.pos.x, self.pos.y, 1.0f32, RED);
         // Left wing
         draw_texture_ex(
             self.state_shared.texture,

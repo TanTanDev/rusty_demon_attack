@@ -89,9 +89,7 @@ impl WaveManager {
                 resources,
                 sound_mixer,
             ),
-            WaveManagerState::Battle => {
-                Self::update_state_battle(dt, enemies, &self.internal_timer)
-            }
+            WaveManagerState::Battle => Self::update_state_battle(enemies, &self.internal_timer),
         };
 
         if let Some(state_command) = state_command_optional {
@@ -116,11 +114,10 @@ impl WaveManager {
     }
 
     fn update_state_battle(
-        dt: f32,
         enemies: &mut Vec<Enemy>,
         internal_time: &f32,
     ) -> Option<WaveManagerCommand> {
-        if enemies.len() <= 0 {
+        if enemies.is_empty() {
             let enemies_left = Self::get_enemy_spawn_count(internal_time);
             return Some(WaveManagerCommand::ChangeState(WaveManagerState::Spawning(
                 WaveManagerStateSpawning {
@@ -145,7 +142,7 @@ impl WaveManager {
             game_state_spawning.spawn_timer -= ENEMY_SPAWN_TIME;
             spawn_enemy(
                 enemies,
-                &resources,
+                resources,
                 SpawnBlueprint::Normal,
                 EnemyColor::random(),
             );

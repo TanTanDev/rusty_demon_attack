@@ -51,9 +51,6 @@ impl Bullet {
     }
 
     pub fn draw(&mut self) {
-        let rect = &self.collision_rect;
-        //draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 2f32, GREEN);
-
         let frame = ((self.anim_timer / BULLET_ANIM_TIME_SPAWN) * 3.0f32) as i32;
         draw_texture_ex(
             self.texture,

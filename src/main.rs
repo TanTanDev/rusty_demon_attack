@@ -46,8 +46,7 @@ async fn main() {
 
     loop {
         let dt = get_frame_time();
-
-        set_camera(Camera2D {
+        let camera = Camera2D {
             // I have no idea why the zoom is this way lmao
             zoom: vec2(1. / GAME_SIZE_X as f32 * 2., 1. / GAME_SIZE_Y as f32 * 2.),
             target: vec2(
@@ -56,7 +55,8 @@ async fn main() {
             ),
             render_target: Some(game_render_target),
             ..Default::default()
-        });
+        };
+        set_camera(&camera);
         clear_background(BLACK);
 
         game_manager.update(dt);

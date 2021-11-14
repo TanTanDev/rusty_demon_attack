@@ -84,9 +84,9 @@ impl Resources {
         file_name: &str,
         enemy_color: EnemyColor,
         enemy_type: EnemyType,
-    ) {
-        let texture: Texture2D = load_texture(file_name).await;
-        set_texture_filter(texture, FilterMode::Nearest);
+    ) -> Result<(), FileError> {
+        let texture: Texture2D = load_texture(file_name).await?;
+        texture.set_filter(FilterMode::Nearest);
         let texture_vec = match enemy_type {
             EnemyType::Normal => match enemy_color {
                 EnemyColor::Purple => &mut self.demons_normal_purple,
@@ -100,6 +100,7 @@ impl Resources {
             },
         };
         texture_vec.push(texture);
+        Ok(())
     }
     pub fn rand_enemy_normal(&self, enemy_color: EnemyColor) -> Texture2D {
         let normal_list = match enemy_color {
@@ -120,27 +121,31 @@ impl Resources {
     }
 }
 
-const SOUND_BYTES_SPAWN: &'static [u8] = include_bytes!("../resources/sounds/spawn.wav");
-const SOUND_BYTES_ENEMY_SHOOT: &'static [u8] =
+const SOUND_BYTES_SPAWN: &[u8] = include_bytes!("../resources/sounds/spawn.wav");
+const SOUND_BYTES_ENEMY_SHOOT: &[u8] =
     include_bytes!("../resources/sounds/enemy_shoot.wav");
-const SOUND_BYTES_PLAYER_SHOOT: &'static [u8] =
+const SOUND_BYTES_PLAYER_SHOOT: &[u8] =
     include_bytes!("../resources/sounds/player_shoot.wav");
 
-const SOUND_BYTES_PLAYER_OUCH: &'static [u8] =
+const SOUND_BYTES_PLAYER_OUCH: &[u8] =
     include_bytes!("../resources/sounds/player_ouch.wav");
-const SOUND_BYTES_ENEMY_OUCH: &'static [u8] = include_bytes!("../resources/sounds/enemy_ouch.wav");
-const SOUND_BYTES_SPAWN_MINI: &'static [u8] = include_bytes!("../resources/sounds/spawn_mini.wav");
-const SOUND_BYTES_WARNING: &'static [u8] = include_bytes!("../resources/sounds/warning.wav");
-const SOUND_BYTES_WAVE_CLEARED: &'static [u8] =
+const SOUND_BYTES_ENEMY_OUCH: &[u8] = include_bytes!("../resources/sounds/enemy_ouch.wav");
+const SOUND_BYTES_SPAWN_MINI: &[u8] = include_bytes!("../resources/sounds/spawn_mini.wav");
+const SOUND_BYTES_WARNING: &[u8] = include_bytes!("../resources/sounds/warning.wav");
+const SOUND_BYTES_WAVE_CLEARED: &[u8] =
     include_bytes!("../resources/sounds/wave_cleared.wav");
 
 pub async fn load_resources(game_render_target: RenderTarget) -> Resources {
-    let texture_player: Texture2D = load_texture("resources/player.png").await;
-    let texture_player_explotion: Texture2D = load_texture("resources/player_explotion.png").await;
-    let texture_player_missile: Texture2D = load_texture("resources/player_missile.png").await;
-    let texture_demon_missile: Texture2D = load_texture("resources/demon_missile.png").await;
-    let texture_ground_bg: Texture2D = load_texture("resources/ground_bg.png").await;
-    let texture_life: Texture2D = load_texture("resources/life.png").await;
+    let texture_player: Texture2D = load_texture("resources/player.png").await.unwrap();
+    let texture_player_explotion: Texture2D = load_texture("resources/player_explotion.png")
+        .await
+        .unwrap();
+    let texture_player_missile: Texture2D =
+        load_texture("resources/player_missile.png").await.unwrap();
+    let texture_demon_missile: Texture2D =
+        load_texture("resources/demon_missile.png").await.unwrap();
+    let texture_ground_bg: Texture2D = load_texture("resources/ground_bg.png").await.unwrap();
+    let texture_life: Texture2D = load_texture("resources/life.png").await.unwrap();
 
     // set all textures filter mode to nearest
     for texture in [
@@ -154,10 +159,12 @@ pub async fn load_resources(game_render_target: RenderTarget) -> Resources {
     ]
     .iter()
     {
-        set_texture_filter(*texture, FilterMode::Nearest);
+        texture.set_filter(FilterMode::Nearest);
     }
 
-    let font = load_ttf_font("resources/Kenney Pixel Square.ttf").await;
+    let font = load_ttf_font("resources/Kenney Pixel Square.ttf")
+        .await
+        .unwrap();
     let mut resources = Resources::new(
         texture_demon_missile,
         texture_player_missile,
@@ -173,28 +180,36 @@ pub async fn load_resources(game_render_target: RenderTarget) -> Resources {
         use EnemyType::{Mini, Normal};
         resources
             .load_texture("resources/demon_mini_green_1.png", Green, Mini)
-            .await;
+            .await
+            .unwrap();
         resources
             .load_texture("resources/demon_mini_red_1.png", Red, Mini)
-            .await;
+            .await
+            .unwrap();
         resources
             .load_texture("resources/demon_mini_purple_1.png", Purple, Mini)
-            .await;
+            .await
+            .unwrap();
         resources
             .load_texture("resources/demon_normal_green_1.png", Green, Normal)
-            .await;
+            .await
+            .unwrap();
         resources
             .load_texture("resources/demon_normal_green_2.png", Green, Normal)
-            .await;
+            .await
+            .unwrap();
         resources
             .load_texture("resources/demon_normal_purple_1.png", Purple, Normal)
-            .await;
+            .await
+            .unwrap();
         resources
             .load_texture("resources/demon_normal_purple_2.png", Purple, Normal)
-            .await;
+            .await
+            .unwrap();
         resources
             .load_texture("resources/demon_normal_red_1.png", Red, Normal)
-            .await;
+            .await
+            .unwrap();
     }
     {
         use SoundIdentifier::*;

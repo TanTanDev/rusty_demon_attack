@@ -26,9 +26,9 @@ pub const PLAYER_LIVES_MAX: i32 = 7i32;
 pub const PLAYER_TIME_INVISBLE: f32 = 2f32;
 
 pub const ENEMY_SPEED: f32 = 50.0f32;
-pub const ENEMY_ANGLE_SPEED_RANGE: Vec2 = Vec2 { x: 0.2f32, y: 3f32 };
+pub const ENEMY_ANGLE_SPEED_RANGE: Vec2 = const_vec2!([0.2f32, 3f32]);
 
-pub const ENEMY_SPEED_HOMING: Vec2 = Vec2 { x: 60f32, y: 30f32 };
+pub const ENEMY_SPEED_HOMING: Vec2 = const_vec2!([60f32, 30f32]);
 pub const ENEMY_BULLET_SPEED: f32 = 80f32;
 pub const ENEMY_SHOOT_TIME: f32 = 2f32;
 // when shooting more than 1 bullet
@@ -41,7 +41,7 @@ pub const ENEMY_ANIM_SPAWN_SCALE: f32 = 4.0f32;
 // how far away the spawn animation starts
 pub const ENEMY_ANIM_DISTANCE: f32 = 140f32;
 // The min to max time until a mini will start homing
-pub const ENEMY_MINI_HOMING_TIME_RANGE: Vec2 = Vec2 { x: 4f32, y: 10f32 };
+pub const ENEMY_MINI_HOMING_TIME_RANGE: Vec2 = const_vec2!([4f32, 10f32]);
 
 // Enemy Spawn management
 pub const ENEMY_SPAWN_STARTING_COUNT: i32 = 2;

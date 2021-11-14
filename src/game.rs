@@ -146,7 +146,7 @@ impl GameState for GameStateGame {
     ) -> Option<GameStateCommand> {
         let manager_message_optional =
             self.wave_manager
-                .update(dt, &mut self.enemies, &resources, sound_mixer);
+                .update(dt, &mut self.enemies, resources, sound_mixer);
         if let Some(manager_message) = manager_message_optional {
             match manager_message {
                 WaveManagerMessage::LevelCleared => {
@@ -166,7 +166,7 @@ impl GameState for GameStateGame {
             enemy.update(
                 dt,
                 &mut self.bullets,
-                &resources,
+                resources,
                 &self.player.pos,
                 &mut self.wave_manager,
                 sound_mixer,
@@ -180,11 +180,10 @@ impl GameState for GameStateGame {
         }
 
         // bullets hurting player
-        for (i, bullet) in self
+        for bullet in self
             .bullets
             .iter_mut()
             .filter(|b| b.hurt_type == BulletHurtType::Player)
-            .enumerate()
         {
             if bullet.overlaps(&self.player.collision_rect) {
                 if self.player.state != PlayerState::Normal {
@@ -237,13 +236,12 @@ impl GameState for GameStateGame {
             Vec::<(Vec2, EnemyDeathMethod, EnemyType, EnemyColor)>::with_capacity(4);
 
         // bullets hurting enemies
-        for (i, bullet) in self
+        for bullet in self
             .bullets
             .iter_mut()
             .filter(|b| b.hurt_type == BulletHurtType::Enemy)
-            .enumerate()
         {
-            for (i, enemy) in self.enemies.iter_mut().enumerate() {
+            for enemy in self.enemies.iter_mut() {
                 if enemy.overlaps(&bullet.collision_rect) && !bullet.is_kill {
                     enemy.state_shared.health -= 1;
                     self.wave_manager.last_enemy_death_reason = LastEnemyDeathReason::Player;
@@ -283,7 +281,7 @@ impl GameState for GameStateGame {
                         let spawn_pos = *pos + vec2(step * spawn_width * i as f32, 0f32);
                         spawn_enemy(
                             &mut self.enemies,
-                            &resources,
+                            resources,
                             SpawnBlueprint::Mini(spawn_pos),
                             *enemy_color,
                         );
@@ -317,12 +315,12 @@ impl GameState for GameStateGame {
         );
 
         self.player
-            .update(dt, &mut self.bullets, &resources, sound_mixer);
+            .update(dt, &mut self.bullets, resources, sound_mixer);
         self.player.draw();
         None
     }
 
-    fn draw(&self, resources: &Resources) {}
+    fn draw(&self, _resources: &Resources) {}
 
     fn draw_unscaled(&self, resources: &Resources) {
         let game_diff_w = screen_width() / GAME_SIZE_X as f32;
@@ -348,6 +346,7 @@ impl GameState for GameStateGame {
                 font_size,
                 font_scale: 1f32,
                 color: YELLOW,
+                font_scale_aspect: 1f32,
             },
         );
     }
@@ -370,7 +369,7 @@ impl GameState for GameStateMenu {
         &mut self,
         _dt: f32,
         _resources: &Resources,
-        sound_mixer: &mut SoundMixer,
+        _sound_mixer: &mut SoundMixer,
     ) -> Option<GameStateCommand> {
         if is_key_pressed(KEY_START_GAME) {
             return Some(GameStateCommand::ChangeState(
@@ -395,7 +394,7 @@ impl GameState for GameStateMenu {
         );
     }
 
-    fn on_enter(&mut self, resources: &Resources, payload_optional: Option<ChangeStatePayload>) {
+    fn on_enter(&mut self, _resources: &Resources, payload_optional: Option<ChangeStatePayload>) {
         if let Some(payload) = payload_optional {
             match payload {
                 ChangeStatePayload::MenuPayload(menu_payload) => {
@@ -431,6 +430,7 @@ impl GameState for GameStateMenu {
                     font_size,
                     font_scale: 1f32,
                     color: YELLOW,
+                    font_scale_aspect: 1f32,
                 },
             );
         }
@@ -447,6 +447,7 @@ impl GameState for GameStateMenu {
                 font_size,
                 font_scale: 1f32,
                 color: YELLOW,
+                font_scale_aspect: 1f32,
             },
         );
     }
